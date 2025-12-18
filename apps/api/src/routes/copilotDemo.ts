@@ -17,7 +17,6 @@ export const copilotDemoRoutes: FastifyPluginAsync = async (app) => {
     });
 
     const system = copilotSystemPrompt({ appName: "Copilot Web" });
-    console.log({ model, system, input, schema: DemoOutputSchema });
     const result = await runStructured({
       model,
       system,
