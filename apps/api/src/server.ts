@@ -9,8 +9,9 @@ loadEnv({
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
-import { authContextCookiePlugin } from "./plugins/authContext.cookie";
-import { copilotDemoRoutes } from "./routes/copilotDemo";
+import { authContextCookiePlugin } from "./plugins/authContext.cookie.js";
+import { copilotDemoRoutes } from "./routes/copilotDemo.js";
+import { copilotAgentRoutes } from "./routes/copilotAgent.js";
 
 const app = Fastify({ logger: true });
 
@@ -32,5 +33,6 @@ app.get("/health", async (req) => {
 });
 
 await app.register(copilotDemoRoutes);
+await app.register(copilotAgentRoutes);
 
 await app.listen({ port: 3001, host: "0.0.0.0" });
