@@ -64,8 +64,11 @@ fi
 # Create component folder if it doesn't exist
 if [[ ! -d "${COMP_DIR}" ]]; then
   mkdir -p "$COMP_DIR"
-  
-  # Create DayCard.tsx
+  echo "Created component folder: ${COMP_DIR}"
+fi
+
+# Create DayCard.tsx if it doesn't exist
+if [[ ! -f "${COMP_DIR}/DayCard.tsx" ]]; then
   cat > "${COMP_DIR}/DayCard.tsx" <<'EOF'
 "use client";
 
@@ -89,15 +92,19 @@ EOF
   
   # Replace ${DAY_NUM} placeholders in DayCard.tsx
   sed -i '' "s/\${DAY_NUM}/${DAY_DISPLAY}/g" "${COMP_DIR}/DayCard.tsx"
-  
-  # Create index.ts
+  echo "Created ${COMP_DIR}/DayCard.tsx"
+else
+  echo "Component already exists: ${COMP_DIR}/DayCard.tsx"
+fi
+
+# Create index.ts if it doesn't exist
+if [[ ! -f "${COMP_DIR}/index.ts" ]]; then
   cat > "${COMP_DIR}/index.ts" <<'EOF'
 export { DayCard } from "./DayCard";
 EOF
-  
-  echo "Created component folder: ${COMP_DIR}"
+  echo "Created ${COMP_DIR}/index.ts"
 else
-  echo "Component folder already exists: ${COMP_DIR}"
+  echo "Component index already exists: ${COMP_DIR}/index.ts"
 fi
 
 echo "Ready on $BRANCH."
