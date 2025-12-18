@@ -92,7 +92,7 @@ EOF
   
   # Create index.ts
   cat > "${COMP_DIR}/index.ts" <<'EOF'
-export { DayCard } from "./DayCard.js";
+export { DayCard } from "./DayCard";
 EOF
   
   echo "Created component folder: ${COMP_DIR}"
