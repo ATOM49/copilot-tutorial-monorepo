@@ -87,6 +87,7 @@ export const STUDY_WEEKS: StudyWeek[] = [
         focus: "productize use cases into a clean contract",
         deliverable:
           "AgentRegistry resolves agentId → runnable (with input/output schemas).",
+        callout:"The registry is in memory for now. strict mode is disabled for ProductQA agent.",
         tasks: [
           {
             id: "agent-def",
