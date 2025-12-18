@@ -3,7 +3,7 @@ import { fileURLToPath } from "url";
 import path from "path";
 
 loadEnv({
-  path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.env"),
+  path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.env.local"),
 });
 
 import Fastify from "fastify";
