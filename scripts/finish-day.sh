@@ -7,8 +7,16 @@ REMOTE="${REMOTE:-origin}"
 PREFIX="${PREFIX:-day}"
 
 if [[ -z "$DAY" ]]; then
-  echo "Usage: ./scripts/finish-day.sh 2   (or 02)"
-  exit 1
+  # Try to infer day number from current branch name (e.g. day/02, day-2, day/02-feature)
+  branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  if [[ -n "$branch" && "$branch" =~ ^${PREFIX}[/-]([0-9]+) ]]; then
+    DAY="${BASH_REMATCH[1]}"
+    echo "Inferred day number '$DAY' from branch '$branch'."
+  else
+    echo "Usage: ./scripts/finish-day.sh 2   (or 02)"
+    echo "Or run this from a branch named '${PREFIX}/<num>' (e.g. ${PREFIX}/02)."
+    exit 1
+  fi
 fi
 
 # Normalize to 2-digit
