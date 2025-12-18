@@ -12,6 +12,7 @@ if [[ -z "$DAY" ]]; then
 fi
 
 DAY_NUM="$(printf '%02d' "$DAY")"
+DAY_DISPLAY="$((10#$DAY))"  # Remove leading zeros for display/paths
 BRANCH="${PREFIX}/${DAY_NUM}"
 
 if ! git diff --quiet || ! git diff --cached --quiet; then
@@ -36,20 +37,20 @@ git merge --no-ff "$BASE" -m "Sync ${BASE} into Day ${DAY_NUM}" || true
 
 # ====== Auto-generate Day Scaffold ======
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-PAGE_DIR="${REPO_ROOT}/apps/web/src/app/dashboard/day/${DAY_NUM}"
-COMP_DIR="${REPO_ROOT}/apps/web/src/components/day-${DAY_NUM}"
+PAGE_DIR="${REPO_ROOT}/apps/web/src/app/dashboard/day/${DAY_DISPLAY}"
+COMP_DIR="${REPO_ROOT}/apps/web/src/components/day-${DAY_DISPLAY}"
 
 # Create page.tsx if it doesn't exist
 if [[ ! -f "${PAGE_DIR}/page.tsx" ]]; then
   mkdir -p "$PAGE_DIR"
   cat > "${PAGE_DIR}/page.tsx" <<EOF
 import { DayProgress } from "@/components/day-progress";
-import { DayCard } from "@/components/day-${DAY_NUM}";
+import { DayCard } from "@/components/day-${DAY_DISPLAY}";
 
-export default function Day${DAY_NUM}Page() {
+export default function Day${DAY_DISPLAY}Page() {
   return (
     <div className="grid gap-4">
-      <DayProgress day={${DAY_NUM}} />
+      <DayProgress day={${DAY_DISPLAY}} />
       <DayCard />
     </div>
   );
@@ -87,7 +88,7 @@ export function DayCard() {
 EOF
   
   # Replace ${DAY_NUM} placeholders in DayCard.tsx
-  sed -i '' "s/\${DAY_NUM}/${DAY_NUM}/g" "${COMP_DIR}/DayCard.tsx"
+  sed -i '' "s/\${DAY_NUM}/${DAY_DISPLAY}/g" "${COMP_DIR}/DayCard.tsx"
   
   # Create index.ts
   cat > "${COMP_DIR}/index.ts" <<'EOF'
