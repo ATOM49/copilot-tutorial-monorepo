@@ -17,11 +17,16 @@ export function loadProgress(): ProgressState {
 
 function save(state: ProgressState) {
   localStorage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(state));
-  // Dispatch storage event for cross-component sync
-  window.dispatchEvent(new StorageEvent("storage", {
-    key: PROGRESS_STORAGE_KEY,
-    newValue: JSON.stringify(state),
-  }));
+  // Dispatch storage event for cross-component sync asynchronously
+  // to avoid setState during render
+  queueMicrotask(() => {
+    window.dispatchEvent(
+      new StorageEvent("storage", {
+        key: PROGRESS_STORAGE_KEY,
+        newValue: JSON.stringify(state),
+      })
+    );
+  });
 }
 
 /**
