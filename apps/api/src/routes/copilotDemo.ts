@@ -4,7 +4,8 @@ import {
   copilotSystemPrompt,
   runStructured,
 } from "@copilot/ai-core";
-import { DemoOutputSchema, z } from "@copilot/shared";
+import { DemoOutputSchema } from "@copilot/shared";
+import { z } from "zod/v3";
 
 export const copilotDemoRoutes: FastifyPluginAsync = async (app) => {
   app.post("/copilot/demo", async (req) => {

@@ -9,6 +9,8 @@ import { simpleCopilotPrompt } from "../prompts/copilotPrompts.js";
  * array when `strict: true`. Some Zod schemas (e.g., with optional or default
  * fields) may violate this, so callers can opt-out of strict mode while still
  * leveraging Zod validation locally.
+ * 
+ * Supports AbortSignal for cancellation and timeout handling.
  */
 export async function runStructured<TSchema extends z.ZodTypeAny>(args: {
   model: {
@@ -21,6 +23,7 @@ export async function runStructured<TSchema extends z.ZodTypeAny>(args: {
   input: string;
   schema: TSchema;
   strict?: boolean;
+  signal?: AbortSignal; // Add abort signal support
 }) {
   const prompt = simpleCopilotPrompt(args.system);
   const chain = prompt.pipe(
@@ -29,5 +32,10 @@ export async function runStructured<TSchema extends z.ZodTypeAny>(args: {
       strict: args.strict ?? true,
     })
   );
-  return chain.invoke({ input: args.input });
+  
+  // LangChain's invoke method accepts a second config parameter where we can pass the signal
+  return chain.invoke(
+    { input: args.input },
+    args.signal ? { signal: args.signal } : undefined
+  );
 }

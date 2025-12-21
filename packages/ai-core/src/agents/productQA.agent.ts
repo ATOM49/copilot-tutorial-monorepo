@@ -33,40 +33,45 @@ export const productQAAgent: AgentDefinition<
   typeof ProductQAInputSchema,
   typeof ProductQAOutputSchema
 > = {
-  id: "product-qa",
-  name: "Product Q&A",
-  inputSchema: ProductQAInputSchema,
-  outputSchema: ProductQAOutputSchema,
+    id: "product-qa",
+    name: "Product Q&A",
+    inputSchema: ProductQAInputSchema,
+    outputSchema: ProductQAOutputSchema,
 
-  async run(
-    input: ProductQAInput,
-    context?: AgentContext
-  ): Promise<ProductQAOutput> {
-    const model = createOpenAIChatModel({
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-    });
+    async run(
+      input: ProductQAInput,
+      context?: AgentContext
+    ): Promise<ProductQAOutput> {
+      const model = createOpenAIChatModel({
+        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+      });
 
-    // Build custom system prompt for this agent
-    const basePrompt = copilotSystemPrompt({ appName: "Product Q&A Agent" });
-    const systemPrompt = [
-      basePrompt,
-      "You are a helpful product assistant that answers questions about products.",
-      input.productContext ? `\nProduct Context:\n${input.productContext}` : "",
-      "\nProvide accurate, helpful answers with a confidence level.",
-      "If you're not sure, indicate lower confidence and suggest follow-up questions.",
-      context ? `\nUser: ${context.userId} | Tenant: ${context.tenantId}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
+      // Build custom system prompt for this agent
+      const basePrompt = copilotSystemPrompt({ appName: "Product Q&A Agent" });
+      const systemPrompt = [
+        basePrompt,
+        "You are a helpful product assistant that answers questions about products.",
+        input.productContext
+          ? `\nProduct Context:\n${input.productContext}`
+          : "",
+        "\nProvide accurate, helpful answers with a confidence level.",
+        "If you're not sure, indicate lower confidence and suggest follow-up questions.",
+        context
+          ? `\nUser: ${context.userId} | Tenant: ${context.tenantId}`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
 
-    const result = await runStructured({
-      model,
-      system: systemPrompt,
-      input: input.question,
-      schema: ProductQAOutputSchema,
-      strict: false,
-    });
+      const result = await runStructured({
+        model,
+        system: systemPrompt,
+        input: input.question,
+        schema: ProductQAOutputSchema,
+        strict: false,
+        signal: context?.signal, // Pass abort signal if available
+      });
 
-    return result;
-  },
-};
+      return result;
+    },
+  };
