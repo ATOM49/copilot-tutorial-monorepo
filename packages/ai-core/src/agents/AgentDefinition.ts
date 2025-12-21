@@ -50,4 +50,5 @@ export interface AgentContext {
   userId: string;
   tenantId: string;
   roles?: string[];
+  signal?: AbortSignal; // For timeout and cancellation support
 }
