@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchAgents, fetchAgent } from "@/lib/api/agents";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,16 +20,14 @@ export function DayCard() {
   const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
   useEffect(() => {
-    const fetchAgents = async () => {
+    const load = async () => {
       try {
-        const res = await fetch(`${apiBase}/copilot/agents`, {
-          credentials: "include",
-        });
-        const data = await res.json();
-        if (data.ok) {
-          setAgents(data.agents);
-        } else {
+        const data = await fetchAgents(apiBase);
+        if (data?.ok === false) {
           setAgentError(data.error ?? "Failed to load agents");
+        } else {
+          const list = Array.isArray(data) ? data : data?.agents ?? [];
+          setAgents(list);
         }
       } catch (err) {
         setAgentError(String(err));
@@ -37,7 +36,7 @@ export function DayCard() {
       }
     };
 
-    fetchAgents();
+    load();
   }, [apiBase]);
 
   const handleSelectAgent = async (agentId: string) => {
@@ -45,14 +44,11 @@ export function DayCard() {
     setAgentInfo(null);
     setAgentInfoLoading(true);
     try {
-      const res = await fetch(`${apiBase}/copilot/agents/${agentId}`, {
-        credentials: "include",
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setAgentInfo(data.agent);
-      } else {
+      const data = await fetchAgent(agentId, apiBase);
+      if (data?.ok === false) {
         setAgentInfo({ error: data.error ?? "Unable to load agent" });
+      } else {
+        setAgentInfo(data?.agent ?? data);
       }
     } catch (err) {
       setAgentInfo({ error: String(err) });
