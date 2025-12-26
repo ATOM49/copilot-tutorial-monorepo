@@ -30,7 +30,7 @@ export function ChatInput({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="flex items-center gap-2">
+    <form onSubmit={handleSubmit} className="flex items-center gap-2 w-full">
       <Input
         placeholder={placeholder || "Ask Copilot..."}
         aria-label="Message input"
