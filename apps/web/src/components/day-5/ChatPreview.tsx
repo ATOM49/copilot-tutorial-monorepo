@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ChatList, ChatMessage } from "./ChatList";
 import { ChatInput } from "./ChatInput";
 import AgentSelector from "./AgentSelector";
 import { runAgent } from "@/lib/api/agents";
+import { Button } from "@/components/ui/button";
 
 const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
@@ -12,6 +13,7 @@ export function ChatPreview() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<string>("");
+  const abortRef = useRef<AbortController | null>(null);
 
   const handleSendMessage = async (text: string) => {
     if (!text.trim() || !selectedAgent) return;
@@ -31,8 +33,12 @@ export function ChatPreview() {
     setMessages((prev) => [...prev, userMessage]);
     setLoading(true);
 
+    // Create AbortController for this request so it can be cancelled
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
-      const data = await runAgent(selectedAgent, { question: text }, apiBase);
+      const data = await runAgent(selectedAgent, { question: text }, apiBase, controller.signal);
 
       // Add AI response with formatted JSON
       const aiMessage: ChatMessage = {
@@ -49,11 +55,12 @@ export function ChatPreview() {
 
       setMessages((prev) => [...prev, aiMessage]);
     } catch (error) {
+      const aborted = (error as any)?.name === "AbortError" || String(error).includes("aborted");
       const errorMessage: ChatMessage = {
         id: `m-${Date.now()}-err`,
         from: "copilot",
         label: "Copilot",
-        text: `Error: ${String(error)}`,
+        text: aborted ? "Request cancelled" : `Error: ${String(error)}`,
         time: new Date().toLocaleTimeString([], {
           hour: "2-digit",
           minute: "2-digit",
@@ -62,6 +69,7 @@ export function ChatPreview() {
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setLoading(false);
+      abortRef.current = null;
     }
   };
 
@@ -72,11 +80,25 @@ export function ChatPreview() {
       </div>
       <AgentSelector onSelect={setSelectedAgent} />
       <ChatList messages={messages} isLoading={loading} />
-      <ChatInput
-        onSendMessage={handleSendMessage}
-        disabled={loading || !selectedAgent}
-        placeholder={selectedAgent ? "Ask Copilot..." : "Select an agent first"}
-      />
+      <div className="flex items-center gap-2">
+        <div className="flex-1">
+          <ChatInput
+            onSendMessage={handleSendMessage}
+            disabled={loading || !selectedAgent}
+            placeholder={selectedAgent ? "Ask Copilot..." : "Select an agent first"}
+          />
+        </div>
+        {loading && (
+          <Button
+            variant="ghost"
+            onClick={() => {
+              abortRef.current?.abort();
+            }}
+          >
+            Cancel
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

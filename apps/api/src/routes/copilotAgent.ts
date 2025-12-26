@@ -14,13 +14,15 @@ agentRegistry.register(productQAAgent);
 
 /**
  * Helper to run agent with timeout and abort handling
+ *
+ * - Uses the provided AbortController (so callers can abort on client disconnect)
+ * - Aborts on timeout
  */
 async function runAgentWithTimeout<T>(
   agentFn: (signal: AbortSignal) => Promise<T>,
-  timeoutMs: number
+  timeoutMs: number,
+  abortController: AbortController = new AbortController()
 ): Promise<T> {
-  const abortController = new AbortController();
-  
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
       abortController.abort();
@@ -34,10 +36,8 @@ async function runAgentWithTimeout<T>(
       })
       .catch((error) => {
         clearTimeout(timer);
-        // If already aborted due to timeout, the timeout error was already rejected
-        if (!abortController.signal.aborted) {
-          reject(error);
-        }
+        // If already aborted due to timeout or external abort, surface the error to caller
+        reject(error);
       });
   });
 }
@@ -136,6 +136,143 @@ export const copilotAgentRoutes: FastifyPluginAsync = async (app) => {
       }
 
       throw error;
+    }
+  });
+
+  /**
+   * POST /copilot/stream
+   * Server-Sent Events (SSE) endpoint that streams agent execution status and final result.
+   * Accepts the same body as /copilot/run and emits events: `status`, `result`, `error`, `done`.
+   */
+  app.post<{
+    Body: RunAgentRequest;
+  }>("/copilot/stream", {
+    schema: {
+      body: RunAgentRequestSchema,
+    },
+  }, async (req, reply) => {
+    const body: RunAgentRequest = req.body;
+    const { agentId, input, timeout } = body;
+
+    // Get agent
+    const agent = agentRegistry.get(agentId);
+    if (!agent) {
+      throw new AgentNotFoundError(agentId);
+    }
+
+    // Validate input
+    let validatedInput;
+    try {
+      validatedInput = agent.inputSchema.parse(input);
+    } catch (error) {
+      throw new ValidationError("Invalid input for agent", error);
+    }
+
+    // Extract auth context
+    const context: AgentContext = {
+      userId: req.auth.userId,
+      tenantId: req.auth.tenantId,
+      roles: req.auth.roles,
+    };
+
+    // Prepare SSE response
+    const raw = reply.raw;
+    // Set CORS headers for hijacked response so browsers accept the streamed reply
+    const origin = req.headers.origin as string | undefined;
+    if (origin) {
+      raw.setHeader("Access-Control-Allow-Origin", origin);
+      raw.setHeader("Vary", "Origin");
+      raw.setHeader("Access-Control-Allow-Credentials", "true");
+    }
+
+    raw.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+    raw.setHeader("Cache-Control", "no-cache");
+    raw.setHeader("Connection", "keep-alive");
+    // Disable buffering (for some proxies)
+    raw.setHeader("X-Accel-Buffering", "no");
+    raw.flushHeaders?.();
+
+    // Tell Fastify we are managing the response manually
+    reply.hijack();
+
+    const writeEvent = (event: string, data: any) => {
+      try {
+        const payload = typeof data === "string" ? data : JSON.stringify(data);
+        raw.write(`event: ${event}\n`);
+        raw.write(`data: ${payload}\n\n`);
+      } catch {
+        // ignore write errors
+      }
+    };
+
+    // Heartbeat (keeps proxies from closing idle SSE connections)
+    const heartbeat = setInterval(() => {
+      try {
+        raw.write(":\n\n");
+      } catch {
+        // ignore
+      }
+    }, 15000);
+
+    const startTime = Date.now();
+
+    // Abort on client disconnect
+    const abortController = new AbortController();
+    raw.on("close", () => {
+      abortController.abort();
+      clearInterval(heartbeat);
+    });
+
+    // Initial status (align to UI: thinking/running/done)
+    writeEvent("status", { status: "thinking", agentId });
+
+    try {
+      const result = await runAgentWithTimeout(
+        (signal) => agent.run(validatedInput, { ...context, signal }),
+        timeout ?? 30000,
+        abortController
+      );
+
+      const executionTimeMs = Date.now() - startTime;
+
+      // Final result
+      writeEvent("result", { ok: true, agentId: agent.id, result, executionTimeMs });
+      writeEvent("status", { status: "done", executionTimeMs });
+      writeEvent("done", { ok: true });
+
+      clearInterval(heartbeat);
+      raw.end();
+      return;
+    } catch (error) {
+      const executionTimeMs = Date.now() - startTime;
+
+      // If the client disconnected, just end quietly
+      if (abortController.signal.aborted) {
+        clearInterval(heartbeat);
+        try { raw.end(); } catch {}
+        return;
+      }
+
+      if (error instanceof TimeoutError) {
+        writeEvent("error", { error: error.message, code: "timeout", executionTimeMs });
+        writeEvent("done", { ok: false });
+        clearInterval(heartbeat);
+        raw.end();
+        return;
+      }
+
+      if (error instanceof Error) {
+        req.log.error({ err: error, agentId }, "Agent stream execution failed");
+        writeEvent("error", { error: error.message, executionTimeMs });
+        writeEvent("done", { ok: false });
+        clearInterval(heartbeat);
+        raw.end();
+        return;
+      }
+
+      clearInterval(heartbeat);
+      raw.end();
+      return;
     }
   });
 
