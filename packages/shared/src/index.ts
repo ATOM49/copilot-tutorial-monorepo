@@ -14,3 +14,5 @@ export {
   type AgentMetadata,
   type ListAgentsResponse,
 } from "./copilot.js";
+
+export { EnvSchema, getEnv, DEFAULTS, type Env } from "./env.js";
