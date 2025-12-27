@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchAgents, fetchAgent } from "@/lib/api/agents";
+import { fetchAgents, fetchAgent, runAgent } from "@/lib/api/agents";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,10 +9,12 @@ import { Input } from "@/components/ui/input";
 export function DayCard() {
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [result, setResult] = useState<any>(null);
   const [agents, setAgents] = useState<Array<{ id: string; name: string }>>([]);
   const [agentsLoading, setAgentsLoading] = useState(true);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [agentInfo, setAgentInfo] = useState<any>(null);
   const [agentInfoLoading, setAgentInfoLoading] = useState(false);
   const [agentError, setAgentError] = useState<string | null>(null);
@@ -23,12 +25,8 @@ export function DayCard() {
     const load = async () => {
       try {
         const data = await fetchAgents(apiBase);
-        if (data?.ok === false) {
-          setAgentError(data.error ?? "Failed to load agents");
-        } else {
-          const list = Array.isArray(data) ? data : data?.agents ?? [];
-          setAgents(list);
-        }
+        const list = Array.isArray(data) ? data : data?.agents ?? [];
+        setAgents(list);
       } catch (err) {
         setAgentError(String(err));
       } finally {
@@ -45,11 +43,8 @@ export function DayCard() {
     setAgentInfoLoading(true);
     try {
       const data = await fetchAgent(agentId, apiBase);
-      if (data?.ok === false) {
-        setAgentInfo({ error: data.error ?? "Unable to load agent" });
-      } else {
-        setAgentInfo(data?.agent ?? data);
-      }
+      const info = data?.agent ?? data;
+      setAgentInfo(info);
     } catch (err) {
       setAgentInfo({ error: String(err) });
     } finally {
@@ -63,22 +58,7 @@ export function DayCard() {
     setResult(null);
 
     try {
-      const response = await fetch(
-        `${
-          process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
-        }/copilot/run`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({
-            agentId: "product-qa",
-            input: { question },
-          }),
-        }
-      );
-
-      const data = await response.json();
+      const data = await runAgent("product-qa", { question }, apiBase);
       setResult(data);
     } catch (error) {
       setResult({ ok: false, error: String(error) });
@@ -111,7 +91,9 @@ export function DayCard() {
                   }`}
                 >
                   <div className="font-medium">{agent.name}</div>
-                  <div className="text-xs text-muted-foreground">{agent.id}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {agent.id}
+                  </div>
                 </button>
               ))}
             </div>
