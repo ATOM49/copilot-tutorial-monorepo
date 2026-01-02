@@ -1,41 +1,40 @@
 import { z } from "zod/v3";
 import type { Runnable } from "@langchain/core/runnables";
-import { simpleCopilotPrompt } from "../prompts/copilotPrompts.js";
+import type { BaseMessage } from "@langchain/core/messages";
 
 /**
  * Run a structured extraction pipeline using a Zod schema.
  *
- * OpenAI's `withStructuredOutput` requires a JSON schema with a `required`
- * array when `strict: true`. Some Zod schemas (e.g., with optional or default
- * fields) may violate this, so callers can opt-out of strict mode while still
- * leveraging Zod validation locally.
- * 
- * Supports AbortSignal for cancellation and timeout handling.
+ * Accepts either a simple system/input pair (uses `simpleCopilotPrompt`) or an
+ * explicit array of `BaseMessage`s when you already have a conversation log
+ * (e.g., tool-aware agents). Always enforces the provided Zod schema.
  */
-export async function runStructured<TSchema extends z.ZodTypeAny>(args: {
-  model: {
-    withStructuredOutput: (
-      schema: TSchema,
-      options: { name: string; strict: boolean }
-    ) => Runnable<any, z.infer<TSchema>>;
-  };
-  system: string;
-  input: string;
+type StructuredModel<TSchema extends z.ZodTypeAny> = {
+  withStructuredOutput: (
+    schema: TSchema,
+    options: { name: string; strict: boolean }
+  ) => Runnable<unknown, z.infer<TSchema>>;
+};
+
+type RunStructuredArgs<TSchema extends z.ZodTypeAny> = {
+  model: StructuredModel<TSchema>;
   schema: TSchema;
   strict?: boolean;
-  signal?: AbortSignal; // Add abort signal support
-}) {
-  const prompt = simpleCopilotPrompt(args.system);
-  const chain = prompt.pipe(
-    args.model.withStructuredOutput(args.schema, {
-      name: "extract",
-      strict: args.strict ?? true,
-    })
-  );
-  
-  // LangChain's invoke method accepts a second config parameter where we can pass the signal
-  return chain.invoke(
-    { input: args.input },
-    args.signal ? { signal: args.signal } : undefined
-  );
+  signal?: AbortSignal;
+  messages?: BaseMessage[];
+};
+
+export async function runStructured<TSchema extends z.ZodTypeAny>(
+  args: RunStructuredArgs<TSchema>
+): Promise<z.infer<TSchema>> {
+  const structured = args.model.withStructuredOutput(args.schema, {
+    name: "extract",
+    strict: args.strict ?? true,
+  });
+
+  const config = args.signal ? { signal: args.signal } : undefined;
+
+  if (args.messages?.length) {
+    return structured.invoke(args.messages, config);
+  }
 }
