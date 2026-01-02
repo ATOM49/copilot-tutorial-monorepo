@@ -102,3 +102,10 @@ Register in [apps/api/src/server.ts](apps/api/src/server.ts) with `await app.reg
 
 ## Study Plan Context
 This repo follows a structured study plan tracked in [apps/web/src/lib/study-plan.ts](apps/web/src/lib/study-plan.ts). The dashboard at `/dashboard` shows day-by-day tasks with local progress tracking.
+
+## Documentation
+
+- [apps/web/README.md](apps/web/README.md) explains the Next.js dashboard, the study-plan-driven layout, and the simplest commands for iterating on the frontend.
+- [apps/api/README.md](apps/api/README.md) captures the Fastify runtime outline, the `/health` and `/copilot/*` endpoints, the auth/error plugins, and the shared schemas/agents that the API depends on.
+
+Keep these READMEs in sync with the code so new contributors know how the two apps interact and which env vars (e.g., `OPENAI_API_KEY`, `NEXT_PUBLIC_API_URL`) need to stay in sync between the services.
