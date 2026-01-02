@@ -1,6 +1,13 @@
 import type { FastifyPluginAsync } from "fastify";
-import { agentRegistry, productQAAgent } from "@copilot/ai-core";
-import type { AgentContext } from "@copilot/ai-core";
+import {
+  agentRegistry,
+  productQAAgent,
+  toolRegistry,
+  timeTool,
+  calculatorTool,
+  searchDocsTool,
+} from "@copilot/ai-core";
+import type { AgentContext, ToolDefinition } from "@copilot/ai-core";
 import {
   RunAgentRequestSchema,
   type RunAgentRequest,
@@ -9,9 +16,16 @@ import {
 } from "@copilot/shared";
 import { AgentNotFoundError, TimeoutError, ModelError, ValidationError } from "../lib/errors.js";
 
-// Register the Product Q&A agent on module load
+// Register agents on module load
 agentRegistry.register(productQAAgent);
 
+// Register tools on module load
+toolRegistry.register(timeTool);
+toolRegistry.register(calculatorTool);
+toolRegistry.register(searchDocsTool);
+
+// Set up allowlists for agents (can be extended later)
+toolRegistry.setAllowlist("product-qa", ["search-docs", "time", "calculator"]);
 /**
  * Helper to run agent with timeout and abort handling
  *
@@ -81,23 +95,29 @@ export const copilotAgentRoutes: FastifyPluginAsync = async (app) => {
       throw new ValidationError("Invalid input for agent", error);
     }
 
+    const allowedTools = toolRegistry.getToolsForAgent(agentId, {
+      fallbackToAll: true,
+    });
+
     // Extract auth context from request (populated by authContext plugin)
-    const context: AgentContext = {
+    const agentContext: AgentContext = {
       userId: req.auth.userId,
       tenantId: req.auth.tenantId,
       roles: req.auth.roles,
+      tools: allowedTools,
+      toolRegistry,
     };
 
     req.log.info({
       agentId,
-      userId: context.userId,
-      tenantId: context.tenantId,
+      userId: agentContext.userId,
+      tenantId: agentContext.tenantId,
     }, "Executing agent");
 
     // Execute agent with timeout handling
     try {
       const result = await runAgentWithTimeout(
-        (signal) => agent.run(validatedInput, { ...context, signal }),
+        (signal) => agent.run(validatedInput, { ...agentContext, signal }),
         timeout ?? 30000 // Default 30s timeout
       );
 
@@ -168,11 +188,17 @@ export const copilotAgentRoutes: FastifyPluginAsync = async (app) => {
       throw new ValidationError("Invalid input for agent", error);
     }
 
+    const allowedTools = toolRegistry.getToolsForAgent(agentId, {
+      fallbackToAll: true,
+    });
+
     // Extract auth context
-    const context: AgentContext = {
+    const agentContext: AgentContext = {
       userId: req.auth.userId,
       tenantId: req.auth.tenantId,
       roles: req.auth.roles,
+      tools: allowedTools,
+      toolRegistry,
     };
 
     // Prepare SSE response
@@ -205,6 +231,23 @@ export const copilotAgentRoutes: FastifyPluginAsync = async (app) => {
       }
     };
 
+    const streamEmit: NonNullable<AgentContext["emit"]> = (evt) => {
+      if (!evt || typeof evt !== "object") return;
+      const type = (evt as { type?: string }).type;
+
+      switch (type) {
+        case "status":
+          writeEvent("status", { status: (evt as { status?: string }).status, agentId });
+          break;
+        case "tool_start":
+        case "tool_end":
+          writeEvent("tool", { agentId, ...evt });
+          break;
+        default:
+          writeEvent("event", { agentId, ...evt });
+      }
+    };
+
     // Heartbeat (keeps proxies from closing idle SSE connections)
     const heartbeat = setInterval(() => {
       try {
@@ -228,7 +271,7 @@ export const copilotAgentRoutes: FastifyPluginAsync = async (app) => {
 
     try {
       const result = await runAgentWithTimeout(
-        (signal) => agent.run(validatedInput, { ...context, signal }),
+        (signal) => agent.run(validatedInput, { ...agentContext, emit: streamEmit, signal }),
         timeout ?? 30000,
         abortController
       );
@@ -312,6 +355,88 @@ export const copilotAgentRoutes: FastifyPluginAsync = async (app) => {
           // Note: We don't expose the run function or full schemas over HTTP
           // Only metadata for UI purposes
         },
+      };
+    }
+  );
+
+  /**
+   * GET /copilot/tools
+   * List all available tools
+   */
+  app.get("/copilot/tools", async (req) => {
+    const tools = toolRegistry.listMetadata();
+    
+    return {
+      ok: true,
+      tools,
+    };
+  });
+
+  /**
+   * GET /copilot/agents/:agentId/tools
+   * Get the allowed tools for a specific agent
+   */
+  app.get<{ Params: { agentId: string } }>(
+    "/copilot/agents/:agentId/tools",
+    async (req) => {
+      const { agentId } = req.params;
+      
+      // Verify agent exists
+      const agent = agentRegistry.get(agentId);
+      if (!agent) {
+        throw new AgentNotFoundError(agentId);
+      }
+
+      const allowedTools = toolRegistry.getAllowedTools(agentId);
+      const availableTools = toolRegistry.listMetadata();
+
+      return {
+        ok: true,
+        agentId,
+        allowedTools: allowedTools.map((t: ToolDefinition) => ({
+          id: t.id,
+          name: t.name,
+        })),
+        availableTools,
+      };
+    }
+  );
+
+  /**
+   * POST /copilot/agents/:agentId/tools
+   * Set the allowed tools for a specific agent
+   */
+  app.post<{ Params: { agentId: string }; Body: { toolIds: string[] } }>(
+    "/copilot/agents/:agentId/tools",
+    async (req) => {
+      const { agentId } = req.params;
+      const { toolIds } = req.body;
+
+      // Verify agent exists
+      const agent = agentRegistry.get(agentId);
+      if (!agent) {
+        throw new AgentNotFoundError(agentId);
+      }
+
+      // Validate tool IDs exist
+      for (const toolId of toolIds) {
+        if (!toolRegistry.has(toolId)) {
+          throw new ValidationError(`Tool with id "${toolId}" not found`);
+        }
+      }
+
+      // Set the allowlist
+      toolRegistry.setAllowlist(agentId, toolIds);
+
+      const allowedTools = toolRegistry.getAllowedTools(agentId);
+
+      return {
+        ok: true,
+        agentId,
+        allowedTools: allowedTools.map((t: ToolDefinition) => ({
+          id: t.id,
+          name: t.name,
+        })),
       };
     }
   );

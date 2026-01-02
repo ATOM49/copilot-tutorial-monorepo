@@ -15,4 +15,15 @@ export {
   type ListAgentsResponse,
 } from "./copilot.js";
 
+export {
+  ToolMetadataSchema,
+  ListToolsResponseSchema,
+  SetToolAllowlistRequestSchema,
+  GetAgentToolsResponseSchema,
+  type ToolMetadata,
+  type ListToolsResponse,
+  type SetToolAllowlistRequest,
+  type GetAgentToolsResponse,
+} from "./tools.js";
+
 export { EnvSchema, getEnv, DEFAULTS, type Env } from "./env.js";

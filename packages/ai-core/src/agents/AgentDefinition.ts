@@ -1,4 +1,6 @@
 import { z } from "zod/v3";
+import type { ToolDefinition } from "../tools/ToolDefinition.js";
+import type { ToolRegistry } from "../tools/ToolRegistry.js";
 
 /**
  * Core agent definition that encapsulates:
@@ -51,4 +53,7 @@ export interface AgentContext {
   tenantId: string;
   roles?: string[];
   signal?: AbortSignal; // For timeout and cancellation support
+  emit?: (event: Record<string, unknown>) => void;
+  tools?: ToolDefinition[]; // Allowed tool definitions resolved upstream
+  toolRegistry?: ToolRegistry; // Registry reference for advanced lookups (optional)
 }

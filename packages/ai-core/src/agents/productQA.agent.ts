@@ -1,8 +1,11 @@
+import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import type { BaseMessage } from "@langchain/core/messages";
 import { z } from "zod/v3";
 import type { AgentDefinition, AgentContext } from "./AgentDefinition.js";
 import { createOpenAIChatModel } from "../providers/openai.js";
+import { toolDefsToLangChainTools } from "../tools/registryToLangChainTools.js";
+import { runToolCallingLoop } from "../runners/runToolLoop.js";
 import { runStructured } from "../runners/runStructured.js";
-import { copilotSystemPrompt } from "../prompts/copilotPrompts.js";
 
 /**
  * Input schema for Product Q&A agent
@@ -18,13 +21,20 @@ export const ProductQAInputSchema = z.object({
 export const ProductQAOutputSchema = z.object({
   answer: z.string(),
   confidence: z.enum(["high", "medium", "low"]),
-  sources: z.array(z.string()).default([]),
-  suggestedFollowUps: z.array(z.string()).default([]),
+  sources: z.array(z.string()).optional().default([]).nullable(),
+  suggestedFollowUps: z.array(z.string()).optional().default([]).nullable(),
 });
 
 export type ProductQAInput = z.infer<typeof ProductQAInputSchema>;
 export type ProductQAOutput = z.infer<typeof ProductQAOutputSchema>;
 
+const AGENT_ID = "product-qa";
+
+const DEFAULT_CONTEXT: AgentContext = {
+  userId: "system",
+  tenantId: "system",
+  tools: [],
+};
 /**
  * Product Q&A Agent
  * Answers questions about products using structured JSON output
@@ -33,45 +43,88 @@ export const productQAAgent: AgentDefinition<
   typeof ProductQAInputSchema,
   typeof ProductQAOutputSchema
 > = {
-    id: "product-qa",
-    name: "Product Q&A",
-    inputSchema: ProductQAInputSchema,
-    outputSchema: ProductQAOutputSchema,
+  id: AGENT_ID,
+  name: "Product Q&A",
+  inputSchema: ProductQAInputSchema,
+  outputSchema: ProductQAOutputSchema,
 
-    async run(
-      input: ProductQAInput,
-      context?: AgentContext
-    ): Promise<ProductQAOutput> {
-      const model = createOpenAIChatModel({
-        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+  run: async (
+    input: ProductQAInput,
+    context?: AgentContext
+  ): Promise<ProductQAOutput> => {
+    const baseModel = createOpenAIChatModel({
+      model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+      temperature: 0,
+    });
+
+    const toolContext: AgentContext = {
+      ...DEFAULT_CONTEXT,
+      ...context,
+    };
+    const signal = toolContext.signal;
+
+    const systemSections = [
+      "You are a Product Q&A copilot.",
+      "Use tools when needed. If a tool is not necessary, answer directly.",
+      "Do not invent tool results.",
+      input.productContext ? `Product Context:\n${input.productContext}` : "",
+      context ? `User: ${context.userId} | Tenant: ${context.tenantId}` : "",
+    ].filter(Boolean);
+
+    const system = systemSections.join("\n\n");
+
+    const allowedTools = toolContext.tools ?? [];
+    const fallbackTools = toolContext.toolRegistry?.getToolsForAgent(AGENT_ID, {
+      fallbackToAll: true,
+    });
+    const toolDefs = allowedTools.length
+      ? allowedTools
+      : fallbackTools ?? toolContext.toolRegistry?.list() ?? [];
+
+    let conversation: BaseMessage[];
+
+    if (toolDefs.length) {
+      const { tools, toolsByName } = toolDefsToLangChainTools(
+        toolDefs,
+        toolContext
+      );
+      const modelWithTools = baseModel.bindTools(tools);
+
+      conversation = await runToolCallingLoop({
+        modelWithTools,
+        toolsByName,
+        system,
+        userInput: input.question,
+        signal,
+        emit: toolContext.emit,
+        maxSteps: 6,
       });
-
-      // Build custom system prompt for this agent
-      const basePrompt = copilotSystemPrompt({ appName: "Product Q&A Agent" });
-      const systemPrompt = [
-        basePrompt,
-        "You are a helpful product assistant that answers questions about products.",
-        input.productContext
-          ? `\nProduct Context:\n${input.productContext}`
-          : "",
-        "\nProvide accurate, helpful answers with a confidence level.",
-        "If you're not sure, indicate lower confidence and suggest follow-up questions.",
-        context
-          ? `\nUser: ${context.userId} | Tenant: ${context.tenantId}`
-          : "",
-      ]
-        .filter(Boolean)
-        .join("\n");
-
-      const result = await runStructured({
-        model,
-        system: systemPrompt,
-        input: input.question,
-        schema: ProductQAOutputSchema,
-        strict: false,
-        signal: context?.signal, // Pass abort signal if available
+    } else {
+      const systemMessage = new SystemMessage(system);
+      const userMessage = new HumanMessage(input.question);
+      const aiResponse = await baseModel.invoke([systemMessage, userMessage], {
+        signal,
       });
+      conversation = [systemMessage, userMessage, aiResponse];
+    }
 
-      return result;
-    },
-  };
+    const structuredMessages: BaseMessage[] = [
+      ...conversation,
+      // new HumanMessage(
+      //   "Return the final answer as JSON matching the schema exactly."
+      // ),
+    ];
+
+    const final = await runStructured({
+      model: baseModel,
+      schema: ProductQAOutputSchema as any,
+      messages: structuredMessages,
+      strict: false,
+      signal,
+    });
+
+    toolContext.emit?.({ type: "status", status: "done" });
+
+    return final;
+  },
+};
