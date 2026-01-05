@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
-export function Day2CopilotDemoCard() {
+export function DayCard() {
   const [input, setInput] = useState(
     "Explain our pricing in one paragraph and give 3 next steps."
   );

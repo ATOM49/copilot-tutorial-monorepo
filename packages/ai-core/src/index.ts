@@ -1,3 +1,16 @@
 export * from "./providers/openai.js";
 export * from "./prompts/copilotPrompts.js";
 export * from "./runners/runStructured.js";
+export * from "./agents/AgentDefinition.js";
+export * from "./agents/AgentRegistry.js";
+export * from "./agents/productQA.agent.js";
+export * from "./tools/ToolDefinition.js";
+export * from "./tools/ToolRegistry.js";
+export * from "./tools/time.tool.js";
+export * from "./tools/calculator.tool.js";
+export * from "./tools/searchDocs.tool.js";
+export * from "./rag/01_docLoader.js";
+export * from "./rag/02_chunker.js";
+export * from "./rag/03_embedder.js";
+export * from "./rag/04_vectorStore.js";
+export { toolRegistry } from "./tools/ToolRegistry.js";

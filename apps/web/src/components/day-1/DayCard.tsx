@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-export function Day1HealthCard() {
+export function DayCard() {
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
 

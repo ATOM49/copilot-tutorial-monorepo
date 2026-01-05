@@ -18,8 +18,11 @@
     "lint": "echo \"(optional)\""
   },
   "dependencies": {
-    "@langchain/core": "^0.3.0",
-    "@langchain/openai": "^0.3.0",
+    "@copilot/shared": "workspace:*",
+    "@langchain/core": "1.1.8",
+    "@langchain/community": "1.1.1",
+    "@langchain/openai": "1.2.0",
+    "@lancedb/lancedb": "0.23.0",
     "zod": "^4.2.1"
   },
   "devDependencies": {

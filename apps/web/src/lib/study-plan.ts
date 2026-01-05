@@ -56,7 +56,8 @@ export const STUDY_WEEKS: StudyWeek[] = [
         title: "ai-core foundations",
         focus: "provider wrapper + prompt helpers + structured JSON",
         deliverable: "POST /copilot/demo returns typed JSON from the model.",
-        callout: "Remember that langchain + zod breaks with zod/v4 so use zod/v3",
+        callout:
+          "Remember that langchain + zod breaks with zod/v4 so use zod/v3",
         tasks: [
           {
             id: "provider",
@@ -87,6 +88,8 @@ export const STUDY_WEEKS: StudyWeek[] = [
         focus: "productize use cases into a clean contract",
         deliverable:
           "AgentRegistry resolves agentId → runnable (with input/output schemas).",
+        callout:
+          "The registry is in memory for now. strict mode is disabled for ProductQA agent.",
         tasks: [
           {
             id: "agent-def",
@@ -236,6 +239,8 @@ export const STUDY_WEEKS: StudyWeek[] = [
         focus: "timeouts, retries, permissions",
         deliverable:
           "Per-agent tool allowlist with guardrails + stable error handling.",
+        callout:
+          "Week 3 : Persist audit logs to DB (real audit trail)\nWeek 3+ : Tie audit logs to tracing (LangSmith/OTel)",
         tasks: [
           {
             id: "allowlist",
@@ -254,6 +259,11 @@ export const STUDY_WEEKS: StudyWeek[] = [
             label:
               "Log tool invocations with userId/tenantId + trace id placeholder",
           },
+          {
+            id: "ui-scroll-indicator",
+            label:
+              'UI shows in-chat "New messages" clickable pill when offscreen to scroll to bottom',
+          },
         ],
       },
       {
@@ -262,6 +272,7 @@ export const STUDY_WEEKS: StudyWeek[] = [
         focus: "documents → chunks → embeddings → store",
         deliverable:
           "You can ingest a small doc set and retrieve relevant chunks.",
+          callout:"https://docs.langchain.com/oss/python/langchain/retrieval very useful reference",
         tasks: [
           {
             id: "loader",

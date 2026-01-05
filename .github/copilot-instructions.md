@@ -28,6 +28,8 @@ cd apps/web && pnpm dev     # Next.js on :3000
 cd apps/api && pnpm dev     # Fastify on :3001 (tsx watch)
 ```
 
+Install dependencies once from the repo root with `pnpm install` (pnpm 9).
+
 ### Adding Dependencies
 ```bash
 pnpm add <pkg> -w                    # Root workspace
@@ -93,6 +95,12 @@ Register in [apps/api/src/server.ts](apps/api/src/server.ts) with `await app.reg
 - **API → OpenAI**: Configured via `OPENAI_API_KEY` and `OPENAI_MODEL` env vars
 - **CORS**: API allows `http://localhost:3000` with credentials
 
+## Environment Variables
+
+- Required keys are documented in [ENV.md](../ENV.md); keep API and web values in sync.
+- Core values: `NEXT_PUBLIC_API_URL` (web → API), `OPENAI_API_KEY`, `OPENAI_MODEL` (API → OpenAI).
+- Load env via `dotenv` in development; production uses platform env injection.
+
 ## Common Pitfalls
 
 1. **Missing `.js` extensions in imports** → Module resolution errors
@@ -102,3 +110,10 @@ Register in [apps/api/src/server.ts](apps/api/src/server.ts) with `await app.reg
 
 ## Study Plan Context
 This repo follows a structured study plan tracked in [apps/web/src/lib/study-plan.ts](apps/web/src/lib/study-plan.ts). The dashboard at `/dashboard` shows day-by-day tasks with local progress tracking.
+
+## Documentation
+
+- [apps/web/README.md](apps/web/README.md) explains the Next.js dashboard, the study-plan-driven layout, and the simplest commands for iterating on the frontend.
+- [apps/api/README.md](apps/api/README.md) captures the Fastify runtime outline, the `/health` and `/copilot/*` endpoints, the auth/error plugins, and the shared schemas/agents that the API depends on.
+
+Keep these READMEs in sync with the code so new contributors know how the two apps interact and which env vars (e.g., `OPENAI_API_KEY`, `NEXT_PUBLIC_API_URL`) need to stay in sync between the services.
