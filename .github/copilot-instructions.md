@@ -28,6 +28,8 @@ cd apps/web && pnpm dev     # Next.js on :3000
 cd apps/api && pnpm dev     # Fastify on :3001 (tsx watch)
 ```
 
+Install dependencies once from the repo root with `pnpm install` (pnpm 9).
+
 ### Adding Dependencies
 ```bash
 pnpm add <pkg> -w                    # Root workspace
@@ -92,6 +94,12 @@ Register in [apps/api/src/server.ts](apps/api/src/server.ts) with `await app.reg
 - **API → LangChain**: Uses `@copilot/ai-core` to abstract LangChain boilerplate
 - **API → OpenAI**: Configured via `OPENAI_API_KEY` and `OPENAI_MODEL` env vars
 - **CORS**: API allows `http://localhost:3000` with credentials
+
+## Environment Variables
+
+- Required keys are documented in [ENV.md](../ENV.md); keep API and web values in sync.
+- Core values: `NEXT_PUBLIC_API_URL` (web → API), `OPENAI_API_KEY`, `OPENAI_MODEL` (API → OpenAI).
+- Load env via `dotenv` in development; production uses platform env injection.
 
 ## Common Pitfalls
 
