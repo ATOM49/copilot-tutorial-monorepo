@@ -10,13 +10,14 @@
     "lint": "echo \"(optional)\""
   },
   "dependencies": {
+    "@copilot/ai-core": "workspace:*",
     "@copilot/shared": "workspace:*",
-	"@copilot/ai-core": "workspace:*",
     "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^10.0.0",
+    "dotenv": "^16.4.5",
     "fastify": "^5.0.0",
     "fastify-plugin": "^5.1.0",
-    "dotenv": "^16.4.5"
+    "fastify-type-provider-zod": "^6.1.0"
   },
   "devDependencies": {
     "tsx": "^4.21.0",
