@@ -48,10 +48,20 @@ export interface AgentDefinition<
 /**
  * Request context passed to agents for auth/tenant awareness
  */
+export interface AgentLogger {
+  info: (obj: Record<string, unknown>, msg?: string) => void;
+  warn: (obj: Record<string, unknown>, msg?: string) => void;
+  error: (obj: Record<string, unknown>, msg?: string) => void;
+}
+
 export interface AgentContext {
   userId: string;
   tenantId: string;
   roles?: string[];
+  requestId?: string;
+  traceId?: string;
+  agentId?: string;
+  logger?: AgentLogger;
   signal?: AbortSignal; // For timeout and cancellation support
   emit?: (event: Record<string, unknown>) => void;
   tools?: ToolDefinition[]; // Allowed tool definitions resolved upstream

@@ -1,4 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
+import { randomUUID } from "node:crypto";
 import {
   agentRegistry,
   productQAAgent,
@@ -95,9 +96,9 @@ export const copilotAgentRoutes: FastifyPluginAsync = async (app) => {
       throw new ValidationError("Invalid input for agent", error);
     }
 
-    const allowedTools = toolRegistry.getToolsForAgent(agentId, {
-      fallbackToAll: true,
-    });
+    const allowedTools = toolRegistry.getAllowedTools(agentId);
+    const requestId = req.id;
+    const traceId = randomUUID();
 
     // Extract auth context from request (populated by authContext plugin)
     const agentContext: AgentContext = {
@@ -106,6 +107,10 @@ export const copilotAgentRoutes: FastifyPluginAsync = async (app) => {
       roles: req.auth.roles,
       tools: allowedTools,
       toolRegistry,
+      requestId,
+      traceId,
+      agentId: agent.id,
+      logger: req.log,
     };
 
     req.log.info({
@@ -188,9 +193,9 @@ export const copilotAgentRoutes: FastifyPluginAsync = async (app) => {
       throw new ValidationError("Invalid input for agent", error);
     }
 
-    const allowedTools = toolRegistry.getToolsForAgent(agentId, {
-      fallbackToAll: true,
-    });
+    const allowedTools = toolRegistry.getAllowedTools(agentId);
+    const requestId = req.id;
+    const traceId = randomUUID();
 
     // Extract auth context
     const agentContext: AgentContext = {
@@ -199,6 +204,10 @@ export const copilotAgentRoutes: FastifyPluginAsync = async (app) => {
       roles: req.auth.roles,
       tools: allowedTools,
       toolRegistry,
+      requestId,
+      traceId,
+      agentId: agent.id,
+      logger: req.log,
     };
 
     // Prepare SSE response

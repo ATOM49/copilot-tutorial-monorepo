@@ -13,6 +13,11 @@ export interface ToolContext extends AgentContext {}
  * - Input schema (Zod)
  * - Execution logic
  */
+export interface ToolPermissions {
+  requiredRoles?: string[];
+  allowedTenants?: string[];
+}
+
 export interface ToolDefinition<
   TInput extends z.ZodTypeAny = z.ZodTypeAny,
   TOutput extends z.ZodTypeAny = z.ZodTypeAny
@@ -28,6 +33,9 @@ export interface ToolDefinition<
 
   /** Optional description shown to the LLM to decide when/how to use this tool */
   description?: string;
+
+  /** Optional permissions guard (roles/tenant) evaluated before execution */
+  permissions?: ToolPermissions;
 
   /** Zod schema describing the expected input structure */
   inputSchema: TInput;

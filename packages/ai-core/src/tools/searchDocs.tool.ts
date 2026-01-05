@@ -40,6 +40,10 @@ export const searchDocsTool: ToolDefinition<
   id: "search-docs",
   name: "Search Documentation",
   inputSchema: SearchDocsInputSchema,
+  permissions: {
+    requiredRoles: ["admin"],
+    allowedTenants: ["dev-tenant"],
+  },
 
   async run(
     input: SearchDocsInput,
