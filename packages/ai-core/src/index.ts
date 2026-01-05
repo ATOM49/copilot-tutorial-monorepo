@@ -9,4 +9,8 @@ export * from "./tools/ToolRegistry.js";
 export * from "./tools/time.tool.js";
 export * from "./tools/calculator.tool.js";
 export * from "./tools/searchDocs.tool.js";
+export * from "./rag/01_docLoader.js";
+export * from "./rag/02_chunker.js";
+export * from "./rag/03_embedder.js";
+export * from "./rag/04_vectorStore.js";
 export { toolRegistry } from "./tools/ToolRegistry.js";

@@ -272,6 +272,7 @@ export const STUDY_WEEKS: StudyWeek[] = [
         focus: "documents → chunks → embeddings → store",
         deliverable:
           "You can ingest a small doc set and retrieve relevant chunks.",
+          callout:"https://docs.langchain.com/oss/python/langchain/retrieval very useful reference",
         tasks: [
           {
             id: "loader",
