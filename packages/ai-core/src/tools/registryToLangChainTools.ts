@@ -1,12 +1,112 @@
 import { tool as langChainTool } from "@langchain/core/tools";
 import type { ToolInterface } from "@langchain/core/tools";
 import { z } from "zod/v3";
+import type { ToolAuditEvent } from "@copilot/shared";
 import type { ToolDefinition, ToolContext } from "./ToolDefinition.js";
+import { ToolPermissionError } from "./errors.js";
 
 type AnyToolDefinition = ToolDefinition<z.ZodTypeAny, z.ZodTypeAny>;
 
-// Helper type to reduce type inference depth at the LangChain tool() boundary
-type AnyZod = z.ZodTypeAny;
+const SENSITIVE_FIELD_PATTERN = /(token|secret|password|api[_-]?key)/i;
+const SUMMARY_LIMIT = 240;
+
+function truncate(value: string, limit = SUMMARY_LIMIT): string {
+  return value.length > limit ? `${value.slice(0, limit)}…` : value;
+}
+
+function summarizeValue(value: unknown, depth = 0): unknown {
+  if (value === null || value === undefined) return value;
+  if (typeof value === "string") return truncate(value.trim(), 120);
+  if (typeof value === "number" || typeof value === "boolean") return value;
+  if (Array.isArray(value)) {
+    if (!value.length) return [];
+    if (depth > 1) return `[array length=${value.length}]`;
+    return value.slice(0, 3).map((entry) => summarizeValue(entry, depth + 1));
+  }
+  if (typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(
+      value as Record<string, unknown>
+    ).slice(0, 6)) {
+      if (SENSITIVE_FIELD_PATTERN.test(key)) {
+        out[key] = "[redacted]";
+        continue;
+      }
+      out[key] = summarizeValue(val, depth + 1);
+    }
+    return out;
+  }
+  return String(value);
+}
+
+function safeSummary(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  try {
+    const summarized = summarizeValue(value);
+    if (summarized === undefined || summarized === null) return undefined;
+    const serialized =
+      typeof summarized === "string" ? summarized : JSON.stringify(summarized);
+    return serialized.length > SUMMARY_LIMIT
+      ? `${serialized.slice(0, SUMMARY_LIMIT)}…`
+      : serialized;
+  } catch {
+    return undefined;
+  }
+}
+
+function baseAuditFields(def: AnyToolDefinition, ctx: ToolContext) {
+  return {
+    traceId: ctx.traceId ?? "unknown-trace",
+    requestId: ctx.requestId ?? "unknown-request",
+    userId: ctx.userId ?? "unknown-user",
+    tenantId: ctx.tenantId ?? "unknown-tenant",
+    agentId: ctx.agentId ?? "unknown-agent",
+    toolId: def.id,
+  } as const;
+}
+
+function emitAuditEvent(
+  ctx: ToolContext,
+  event: ToolAuditEvent,
+  level: "info" | "warn" = "info"
+) {
+  const logger = ctx.logger;
+  if (!logger) return;
+  if (level === "warn") {
+    logger.warn(event);
+  } else {
+    logger.info(event);
+  }
+}
+
+function enforceToolPermissions(def: AnyToolDefinition, ctx: ToolContext) {
+  const permissions = def.permissions;
+  if (!permissions) return;
+
+  const roles = ctx.roles ?? [];
+  if (permissions.requiredRoles?.length) {
+    const missing = permissions.requiredRoles.filter(
+      (role) => !roles.includes(role)
+    );
+    if (missing.length) {
+      throw new ToolPermissionError(
+        `Missing required role${
+          permissions.requiredRoles.length > 1 ? "s" : ""
+        } (${permissions.requiredRoles.join(", ")}) for tool "${def.id}"`
+      );
+    }
+  }
+
+  if (permissions.allowedTenants?.length) {
+    if (!permissions.allowedTenants.includes(ctx.tenantId)) {
+      throw new ToolPermissionError(
+        `Tenant "${ctx.tenantId ?? "unknown"}" is not allowed to use tool "${
+          def.id
+        }"`
+      );
+    }
+  }
+}
 
 export function toolDefToLangChainTool(
   def: AnyToolDefinition,
@@ -24,10 +124,46 @@ export function toolDefToLangChainTool(
       // propagate abort signal (prefer config.signal if present)
       const signal = config?.signal ?? ctx.signal;
 
-      const out = await def.run(parsed as any, { ...(ctx as any), signal });
+      const auditBase = baseAuditFields(def, ctx);
+      const startEvent: ToolAuditEvent = {
+        type: "tool_invocation_start",
+        ts: new Date().toISOString(),
+        ...auditBase,
+        inputSummary: safeSummary(parsed),
+      };
+      emitAuditEvent(ctx, startEvent);
 
-      // ToolMessage content must be string-ish; stringify objects
-      return typeof out === "string" ? out : JSON.stringify(out);
+      const startedAt = Date.now();
+
+      try {
+        enforceToolPermissions(def, ctx);
+        const out = await def.run(parsed as any, { ...(ctx as any), signal });
+
+        const successEvent: ToolAuditEvent = {
+          type: "tool_invocation_end",
+          ts: new Date().toISOString(),
+          ...auditBase,
+          ok: true,
+          durationMs: Date.now() - startedAt,
+          outputSummary: safeSummary(out),
+        };
+        emitAuditEvent(ctx, successEvent);
+
+        // ToolMessage content must be string-ish; stringify objects
+        return typeof out === "string" ? out : JSON.stringify(out);
+      } catch (error) {
+        const err = error as Error | undefined;
+        const failureEvent: ToolAuditEvent = {
+          type: "tool_invocation_end",
+          ts: new Date().toISOString(),
+          ...auditBase,
+          ok: false,
+          durationMs: Date.now() - startedAt,
+          error: err?.message ? truncate(err.message) : "Tool failed",
+        };
+        emitAuditEvent(ctx, failureEvent, "warn");
+        throw error;
+      }
     },
     {
       // IMPORTANT: this name is what the model will call

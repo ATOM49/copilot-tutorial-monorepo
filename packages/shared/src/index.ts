@@ -27,3 +27,4 @@ export {
 } from "./tools.js";
 
 export { EnvSchema, getEnv, DEFAULTS, type Env } from "./env.js";
+export type { ToolAuditEvent } from "./audit.js";

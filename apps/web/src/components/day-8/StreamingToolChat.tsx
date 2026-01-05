@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import AgentSelector from "@/components/day-5/AgentSelector";
 import { ChatInput } from "@/components/day-5/ChatInput";
 import { ChatList, type ChatMessage } from "@/components/day-5/ChatList";
@@ -14,7 +14,7 @@ interface TimelineEvent {
   detail?: string;
 }
 
-const formatDetail = (data: any): string | undefined => {
+const formatDetail = (data: unknown): string | undefined => {
   if (data == null || data === "") return undefined;
   if (typeof data === "string") return data;
   try {
@@ -30,6 +30,22 @@ export function StreamingToolChat() {
   const [loading, setLoading] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<string>("");
   const stopRef = useRef<(() => void) | null>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [showNewIndicator, setShowNewIndicator] = useState(false);
+  const previousMessageCountRef = useRef(0);
+  const rafRef = useRef<number | null>(null);
+  const schedule = useCallback((cb: () => void) => {
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      try {
+        cb();
+      } catch {}
+    });
+  }, []);
+
+  const dismissNewIndicator = useCallback(() => setShowNewIndicator(false), []);
 
   useEffect(() => {
     return () => {
@@ -38,14 +54,73 @@ export function StreamingToolChat() {
           stopRef.current();
         } catch {}
       }
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
+    // Intentionally omit dismissNewIndicator from cleanup to avoid setting
+    // state on unmount.
   }, []);
 
-  const recordEvent = (event: string, data: any) => {
+  const scrollToBottom = useCallback(() => {
+    const container = chatContainerRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+  }, []);
+
+  const handleScrollPosition = useCallback(() => {
+    const container = chatContainerRef.current;
+    if (!container) return;
+    const threshold = 40;
+    const distanceFromBottom =
+      container.scrollHeight - (container.scrollTop + container.clientHeight);
+    setIsAtBottom(distanceFromBottom <= threshold);
+  }, []);
+
+  useEffect(() => {
+    const container = chatContainerRef.current;
+    if (!container) return;
+
+    // Defer initial state update to avoid synchronous setState inside effect
+    schedule(() => handleScrollPosition());
+
+    container.addEventListener("scroll", handleScrollPosition);
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      container.removeEventListener("scroll", handleScrollPosition);
+    };
+  }, [handleScrollPosition]);
+
+  useEffect(() => {
+    if (isAtBottom) {
+      // Only clear the indicator if it's visible; defer to avoid
+      // synchronous setState inside an effect.
+      schedule(() => {
+        setShowNewIndicator((prev) => (prev ? false : prev));
+      });
+    }
+  }, [isAtBottom, schedule]);
+
+  useEffect(() => {
+    if (messages.length > previousMessageCountRef.current) {
+      if (isAtBottom) {
+        // Scroll immediately; clear indicator deferred.
+        scrollToBottom();
+        schedule(() => setShowNewIndicator(false));
+      } else {
+        // Defer this state update to the next animation frame.
+        schedule(() => setShowNewIndicator(true));
+      }
+    }
+    previousMessageCountRef.current = messages.length;
+  }, [messages, isAtBottom, scrollToBottom, dismissNewIndicator]);
+
+  const recordEvent = (event: string, data: unknown) => {
     const entry: TimelineEvent = {
       id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       event,
-      time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      time: new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
       detail: formatDetail(data),
     };
 
@@ -62,7 +137,10 @@ export function StreamingToolChat() {
       stopRef.current = null;
     }
 
-    const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const now = new Date().toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
     const userMessage: ChatMessage = {
       id: `m-${Date.now()}`,
       from: "user",
@@ -97,13 +175,21 @@ export function StreamingToolChat() {
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === aiId
-                  ? { ...m, text: status === "started" ? "thinking..." : status ?? m.text }
+                  ? {
+                      ...m,
+                      text:
+                        status === "started" ? "thinking..." : status ?? m.text,
+                    }
                   : m
               )
             );
           } else if (event === "result") {
             setMessages((prev) =>
-              prev.map((m) => (m.id === aiId ? { ...m, jsonData: data?.result ?? data, text: "" } : m))
+              prev.map((m) =>
+                m.id === aiId
+                  ? { ...m, jsonData: data?.result ?? data, text: "" }
+                  : m
+              )
             );
           } else if (event === "error") {
             setMessages((prev) =>
@@ -127,7 +213,9 @@ export function StreamingToolChat() {
       const message = err instanceof Error ? err.message : String(err);
       recordEvent("error", { error: message });
       setMessages((prev) =>
-        prev.map((m) => (m.id === aiId ? { ...m, text: `Error: ${message}` } : m))
+        prev.map((m) =>
+          m.id === aiId ? { ...m, text: `Error: ${message}` } : m
+        )
       );
       setLoading(false);
       stopRef.current = null;
@@ -148,7 +236,10 @@ export function StreamingToolChat() {
       from: "copilot",
       label: "Copilot",
       text: "Cancelled",
-      time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      time: new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
     };
     setMessages((prev) => [...prev, cancelMessage]);
     recordEvent("cancelled", { reason: "User cancelled the request" });
@@ -163,16 +254,34 @@ export function StreamingToolChat() {
       <AgentSelector onSelect={setSelectedAgent} />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <div className="flex flex-col gap-3 rounded-lg border border-slate-200/70 bg-white p-4 dark:border-slate-800/70 dark:bg-slate-950">
-          <div className="h-64 overflow-auto pr-1">
+        <div className="relative flex flex-col gap-3 rounded-lg border border-slate-200/70 bg-white p-4 dark:border-slate-800/70 dark:bg-slate-950">
+          <div ref={chatContainerRef} className="h-64 overflow-auto pr-1">
             <ChatList messages={messages} isLoading={loading} />
           </div>
+
+          {/* Floating in-chat new-message indicator */}
+          {showNewIndicator && (
+            <div
+              role="button"
+              onClick={() => {
+                scrollToBottom();
+                schedule(() => setShowNewIndicator(false));
+              }}
+              className="absolute left-1/2 bottom-16 z-20 -translate-x-1/2 transform cursor-pointer rounded-full bg-slate-900/90 px-3 py-1 text-xs font-medium text-white shadow-md hover:bg-slate-900"
+            >
+              New messages
+            </div>
+          )}
 
           <div className="flex items-center gap-2">
             <ChatInput
               onSendMessage={handleSend}
               disabled={loading || !selectedAgent}
-              placeholder={selectedAgent ? "Ask Copilot (tools)..." : "Select an agent first"}
+              placeholder={
+                selectedAgent
+                  ? "Ask Copilot (tools)..."
+                  : "Select an agent first"
+              }
             />
             {loading && (
               <Button variant="ghost" onClick={handleCancel}>
@@ -188,7 +297,9 @@ export function StreamingToolChat() {
           </div>
           <div className="mt-3 max-h-64 space-y-2 overflow-auto">
             {timeline.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No streaming events yet.</p>
+              <p className="text-xs text-muted-foreground">
+                No streaming events yet.
+              </p>
             ) : (
               timeline.map((item) => (
                 <div

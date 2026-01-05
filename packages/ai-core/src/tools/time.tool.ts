@@ -31,6 +31,10 @@ export const timeTool: ToolDefinition<
   id: "time",
   name: "Current Time",
   inputSchema: TimeInputSchema,
+  permissions: {
+    requiredRoles: ["admin"],
+    allowedTenants: ["dev-tenant"],
+  },
 
   async run(
     input: TimeInput,

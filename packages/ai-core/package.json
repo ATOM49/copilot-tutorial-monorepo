@@ -18,6 +18,7 @@
     "lint": "echo \"(optional)\""
   },
   "dependencies": {
+    "@copilot/shared": "workspace:*",
     "@langchain/core": "^0.3.0",
     "@langchain/openai": "^0.3.0",
     "zod": "^4.2.1"

@@ -34,6 +34,7 @@ const DEFAULT_CONTEXT: AgentContext = {
   userId: "system",
   tenantId: "system",
   tools: [],
+  agentId: AGENT_ID,
 };
 /**
  * Product Q&A Agent
@@ -61,6 +62,7 @@ export const productQAAgent: AgentDefinition<
       ...DEFAULT_CONTEXT,
       ...context,
     };
+    toolContext.agentId = toolContext.agentId ?? AGENT_ID;
     const signal = toolContext.signal;
 
     const systemSections = [
@@ -73,13 +75,17 @@ export const productQAAgent: AgentDefinition<
 
     const system = systemSections.join("\n\n");
 
-    const allowedTools = toolContext.tools ?? [];
-    const fallbackTools = toolContext.toolRegistry?.getToolsForAgent(AGENT_ID, {
-      fallbackToAll: true,
-    });
-    const toolDefs = allowedTools.length
-      ? allowedTools
-      : fallbackTools ?? toolContext.toolRegistry?.list() ?? [];
+    const allowedTools = toolContext.tools;
+    const fallbackTools =
+      allowedTools === undefined
+        ? toolContext.toolRegistry?.getToolsForAgent(AGENT_ID, {
+            fallbackToAll: true,
+          })
+        : undefined;
+    const toolDefs =
+      allowedTools !== undefined
+        ? allowedTools
+        : fallbackTools ?? toolContext.toolRegistry?.list() ?? [];
 
     let conversation: BaseMessage[];
 

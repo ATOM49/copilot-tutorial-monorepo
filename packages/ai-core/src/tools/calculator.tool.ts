@@ -33,6 +33,10 @@ export const calculatorTool: ToolDefinition<
   id: "calculator",
   name: "Calculator",
   inputSchema: CalculatorInputSchema,
+  permissions: {
+    requiredRoles: ["admin"],
+    allowedTenants: ["dev-tenant"],
+  },
 
   async run(
     input: CalculatorInput,
