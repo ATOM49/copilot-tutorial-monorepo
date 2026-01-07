@@ -11,3 +11,4 @@ coverage
 *.log
 pnpm-lock.yaml
 .env
+.vectorstore

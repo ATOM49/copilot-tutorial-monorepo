@@ -13,4 +13,5 @@ export * from "./rag/01_docLoader.js";
 export * from "./rag/02_chunker.js";
 export * from "./rag/03_embedder.js";
 export * from "./rag/04_vectorStore.js";
+export * from "./rag/05_ingest.js";
 export { toolRegistry } from "./tools/ToolRegistry.js";
