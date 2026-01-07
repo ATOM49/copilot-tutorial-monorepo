@@ -8,6 +8,7 @@ export type ChunkOptions = {
 export type DocChunk = {
   id: string;
   docId: string;
+  title: string;
   content: string;
   chunkIndex: number;
   sourcePath: string;
@@ -64,6 +65,7 @@ function chunkBlocks(
     chunks.push({
       id: `${doc.id}-chunk-${chunkIndex}`,
       docId: doc.id,
+      title: doc.title,
       content: content.trim(),
       chunkIndex,
       sourcePath: doc.sourcePath,

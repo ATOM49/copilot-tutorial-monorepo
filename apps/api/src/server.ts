@@ -18,6 +18,7 @@ import { authContextCookiePlugin } from "./plugins/authContext.cookie.js";
 import { errorHandler } from "./plugins/errorHandler.js";
 import { copilotDemoRoutes } from "./routes/copilotDemo.js";
 import { copilotAgentRoutes } from "./routes/copilotAgent.js";
+import { ragRoutes } from "./routes/ragRoutes.js";
 
 // Create Fastify instance with Zod type provider
 const app = Fastify({ 
@@ -51,5 +52,6 @@ app.get("/health", async (req) => {
 
 await app.register(copilotDemoRoutes);
 await app.register(copilotAgentRoutes);
+await app.register(ragRoutes);
 
 await app.listen({ port: 3001, host: "0.0.0.0" });

@@ -272,7 +272,8 @@ export const STUDY_WEEKS: StudyWeek[] = [
         focus: "documents → chunks → embeddings → store",
         deliverable:
           "You can ingest a small doc set and retrieve relevant chunks.",
-          callout:"https://docs.langchain.com/oss/python/langchain/retrieval very useful reference",
+        callout:
+          "https://docs.langchain.com/oss/python/langchain/retrieval very useful reference, Use FAISS vector store for implementation",
         tasks: [
           {
             id: "loader",
@@ -289,6 +290,11 @@ export const STUDY_WEEKS: StudyWeek[] = [
           {
             id: "store",
             label: "Vector store wired (start local/dev-friendly)",
+          },
+          {
+            id: "ingest-script",
+            label:
+              "Ingest script that runs end-to-end (docs → chunks → embeddings → store)",
           },
         ],
       },
