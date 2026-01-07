@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   agentRegistry,
   productQAAgent,
+  monorepoAgent,
   toolRegistry,
   timeTool,
   calculatorTool,
@@ -19,6 +20,7 @@ import { AgentNotFoundError, TimeoutError, ModelError, ValidationError } from ".
 
 // Register agents on module load
 agentRegistry.register(productQAAgent);
+agentRegistry.register(monorepoAgent);
 
 // Register tools on module load
 toolRegistry.register(timeTool);
@@ -27,6 +29,7 @@ toolRegistry.register(searchDocsTool);
 
 // Set up allowlists for agents (can be extended later)
 toolRegistry.setAllowlist("product-qa", ["search-docs", "time", "calculator"]);
+toolRegistry.setAllowlist("monorepo-rag", ["search-docs"]);
 /**
  * Helper to run agent with timeout and abort handling
  *

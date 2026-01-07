@@ -37,4 +37,8 @@ export async function runStructured<TSchema extends z.ZodTypeAny>(
   if (args.messages?.length) {
     return structured.invoke(args.messages, config);
   }
+
+  throw new Error(
+    "runStructured requires messages; provide a message array to extract structured output"
+  );
 }

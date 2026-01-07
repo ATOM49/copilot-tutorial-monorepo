@@ -4,6 +4,8 @@ export * from "./runners/runStructured.js";
 export * from "./agents/AgentDefinition.js";
 export * from "./agents/AgentRegistry.js";
 export * from "./agents/productQA.agent.js";
+export * from "./agents/monorepo.agent.js";
+export * from "./agents/agentUtils.js";
 export * from "./tools/ToolDefinition.js";
 export * from "./tools/ToolRegistry.js";
 export * from "./tools/time.tool.js";
