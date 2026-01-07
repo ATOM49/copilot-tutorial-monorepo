@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { ChatBubble } from "./ChatBubble";
 
 export interface ChatMessage {
@@ -8,10 +9,10 @@ export interface ChatMessage {
   label: string;
   text: string;
   time: string;
-  jsonData?: any;
+  jsonData?: unknown;
 }
 
-function JsonDisplay({ data }: { data: any }) {
+function JsonDisplay({ data }: { data: unknown }) {
   return (
     <pre className="mt-2 overflow-x-auto rounded-md bg-muted p-2 text-xs">
       <code>{JSON.stringify(data, null, 2)}</code>
@@ -19,7 +20,13 @@ function JsonDisplay({ data }: { data: any }) {
   );
 }
 
-export function ChatList({ messages, isLoading }: { messages: ChatMessage[]; isLoading?: boolean }) {
+interface ChatListProps {
+  messages: ChatMessage[];
+  isLoading?: boolean;
+  renderMessage?: (message: ChatMessage) => ReactNode;
+}
+
+export function ChatList({ messages, isLoading, renderMessage }: ChatListProps) {
   return (
     <div
       role="list"
@@ -30,12 +37,22 @@ export function ChatList({ messages, isLoading }: { messages: ChatMessage[]; isL
         <div className="text-sm text-muted-foreground">Start chatting to see messages...</div>
       ) : (
         <>
-          {messages.map((message) => (
-            <div key={message.id}>
+          {messages.map((message) => {
+            const bubble = renderMessage ? (
+              renderMessage(message)
+            ) : (
               <ChatBubble message={message} />
-              {message.jsonData && <JsonDisplay data={message.jsonData} />}
-            </div>
-          ))}
+            );
+
+            return (
+              <div key={message.id}>
+                {bubble}
+                {!renderMessage && message.jsonData && (
+                  <JsonDisplay data={message.jsonData} />
+                )}
+              </div>
+            );
+          })}
           {isLoading && (
             <div className="text-sm text-muted-foreground">Copilot is thinking...</div>
           )}

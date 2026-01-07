@@ -24,10 +24,12 @@ const MonorepoAgentCitationSchema = z.object({
 const MonorepoAgentOutputSchema = z.object({
   answer: z.string(),
   citations: z.array(MonorepoAgentCitationSchema),
+  confidence: z.number().min(0).max(1).describe("Confidence score between 0 and 1, where 1 is highest confidence"),
 });
 
 const AnswerSchema = z.object({
   answer: z.string(),
+  confidence: z.number().min(0).max(1).describe("Confidence score between 0 and 1 based on the quality and relevance of the retrieved documentation"),
 });
 
 export type MonorepoAgentInput = z.infer<typeof MonorepoAgentInputSchema>;
@@ -54,8 +56,12 @@ export const monorepoAgent: AgentDefinition<
     const system = [
       "You are the Monorepo Documentation Copilot.",
       "You have access to a search-docs tool to find relevant documentation.",
-      `Use the search-docs tool to find documentation relevant to: "${input.question}"`,
-      `Search with a limit of ${limit} results.`,
+      "",
+      "MANDATORY TOOL USAGE:",
+      "You MUST call the search-docs tool FIRST before providing any answer.",
+      `Call search-docs with query="${input.question}" and limit=${limit}.`,
+      "Wait for the tool results before formulating your response.",
+      "Do NOT attempt to answer the question without first retrieving documentation.",
       "",
       "IMPORTANT GROUNDING RULES:",
       "1. Base your answer ONLY on information from the retrieved documentation chunks.",
@@ -63,6 +69,12 @@ export const monorepoAgent: AgentDefinition<
       "3. Always cite sources using the format [docId#chunkId] for every claim you make.",
       "4. If the retrieved documentation doesn't contain enough information to answer the question, explicitly state what's missing and what you found instead.",
       "5. If the search results are empty or irrelevant, say so clearly rather than attempting to answer from general knowledge.",
+      "",
+      "CONFIDENCE SCORING:",
+      "Provide a confidence score (0-1) based on:",
+      "- How directly the retrieved docs answer the question (1.0 = perfect match, 0.5 = partial, 0.0 = no relevant info)",
+      "- The completeness of the information found",
+      "- The quality and clarity of the source material",
       "",
       "Your role is to be a reliable documentation assistant, not a general knowledge chatbot.",
     ].join("\n\n");
@@ -77,8 +89,11 @@ export const monorepoAgent: AgentDefinition<
 
     // Extract citations from tool results in conversation
     const citations: Array<{ docId: string; chunkId: string; snippet: string }> = [];
+    let toolWasCalled = false;
+    
     for (const msg of conversation) {
       if (msg._getType() === "tool" && msg.content) {
+        toolWasCalled = true;
         try {
           const toolResult = typeof msg.content === "string" 
             ? JSON.parse(msg.content)
@@ -101,7 +116,14 @@ export const monorepoAgent: AgentDefinition<
       }
     }
 
-    const { answer } = await runStructured({
+    // Ensure the agent actually used the retrieval tool
+    if (!toolWasCalled) {
+      throw new Error(
+        "Agent did not use the search-docs tool as required. The agent must retrieve documentation before answering."
+      );
+    }
+
+    const { answer, confidence } = await runStructured({
       model: baseModel,
       schema: AnswerSchema as any,
       messages: conversation,
@@ -112,6 +134,7 @@ export const monorepoAgent: AgentDefinition<
     return {
       answer,
       citations,
+      confidence,
     };
   },
 };

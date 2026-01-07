@@ -1,7 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import {
   createOpenAIChatModel,
-  copilotSystemPrompt,
   runStructured,
 } from "@copilot/ai-core";
 import { DemoOutputSchema } from "@copilot/shared";
@@ -17,10 +16,8 @@ export const copilotDemoRoutes: FastifyPluginAsync = async (app) => {
       apiKey: process.env.OPENAI_API_KEY,
     });
 
-    const system = copilotSystemPrompt({ appName: "Copilot Web" });
     const result = await runStructured({
       model,
-      system,
       input,
       schema: DemoOutputSchema,
     });
