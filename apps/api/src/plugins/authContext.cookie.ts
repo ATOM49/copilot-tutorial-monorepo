@@ -8,6 +8,12 @@ const AuthContextSchema = z.object({
   roles: z.array(z.string()).optional(),
 });
 
+const DEV_DEFAULT_AUTH: AuthContext = {
+  userId: "dev-user",
+  tenantId: "dev-tenant",
+  roles: ["admin"],
+};
+
 export type AuthContext = z.infer<typeof AuthContextSchema>;
 
 declare module "fastify" {
@@ -22,16 +28,20 @@ export const authContextCookiePlugin = fp(async (app) => {
 
     // dev fallback (so API still works if cookie isn't set yet)
     if (!raw) {
-      req.auth = { userId: "dev-user", tenantId: "dev-tenant" };
+      req.auth = DEV_DEFAULT_AUTH;
       return;
     }
 
     try {
       const parsed = JSON.parse(raw);
-      req.auth = AuthContextSchema.parse(parsed);
+      const auth = AuthContextSchema.parse(parsed);
+      req.auth = {
+        ...auth,
+        roles: auth.roles?.length ? auth.roles : DEV_DEFAULT_AUTH.roles,
+      };
     } catch {
       // if cookie is malformed, fail closed (or fallback in dev)
-      req.auth = { userId: "dev-user", tenantId: "dev-tenant" };
+      req.auth = DEV_DEFAULT_AUTH;
     }
   });
 });
