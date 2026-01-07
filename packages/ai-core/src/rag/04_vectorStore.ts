@@ -109,7 +109,7 @@ export async function upsertChunks(
 
 export async function similaritySearch(
   queryEmbedding: number[],
-  k = 5,
+  k = 3,
   config: VectorStoreConfig = {}
 ): Promise<VectorSearchResult[]> {
   const { store } = await getStore(config);

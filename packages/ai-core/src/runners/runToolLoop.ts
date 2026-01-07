@@ -73,12 +73,8 @@ function forwardAbort(
   return () => source.removeEventListener("abort", handler);
 }
 
-function extractToolCalls(
-  ai: any
-): Array<{ id: string; name: string; args: any }> {
-  // LangChain usually normalizes this to ai.tool_calls on tool-calling models
+function extractToolCalls(ai: any): Array<{ id: string; name: string; args: any }> {
   if (Array.isArray(ai?.tool_calls)) return ai.tool_calls;
-  // fallback (some versions/providers)
   const tc = ai?.additional_kwargs?.tool_calls;
   return Array.isArray(tc) ? tc : [];
 }

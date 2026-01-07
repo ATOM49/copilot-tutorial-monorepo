@@ -77,6 +77,7 @@ function emitAuditEvent(
   } else {
     logger.info(event);
   }
+  ctx.emit?.(event);
 }
 
 function enforceToolPermissions(def: AnyToolDefinition, ctx: ToolContext) {

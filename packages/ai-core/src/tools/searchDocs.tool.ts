@@ -5,12 +5,13 @@ import {
   similaritySearch,
   type VectorStoreConfig,
 } from "../rag/04_vectorStore.js";
+import { ingestLocalDocs } from "../rag/05_ingest.js";
 
 const SNIPPET_LENGTH = 320;
 
 export const SearchDocsInputSchema = z.object({
   query: z.string().min(1, "Query is required"),
-  limit: z.number().int().min(1).max(20).default(5),
+  limit: z.number().int().min(1).max(20).default(3),
   vectorStore: z
     .object({
       indexPath: z.string().optional(),
@@ -24,7 +25,8 @@ export const SearchDocsInputSchema = z.object({
 export const SearchDocsOutputSchema = z.object({
   results: z.array(
     z.object({
-      id: z.string(),
+      docId: z.string(),
+      chunkId: z.string(),
       title: z.string(),
       snippet: z.string(),
       score: z.number(),
@@ -69,25 +71,40 @@ export const searchDocsTool: ToolDefinition<
 
     const vectorStoreConfig: VectorStoreConfig | undefined = input.vectorStore;
 
-    try {
+    const executeSearch = async () => {
       const { embedding, resolved } = await embedQuery(query, vectorStoreConfig);
       const matches = await similaritySearch(embedding, input.limit, resolved);
-
-      const results = matches.map(({ chunk, score }) => ({
-        id: chunk.id,
+      return matches.map(({ chunk, score }) => ({
+        docId: chunk.docId,
+        chunkId: chunk.id,
         title: chunk.title ?? chunk.section ?? chunk.docId,
         snippet: summarizeSnippet(chunk.content),
         score,
       }));
+    };
 
-      return {
-        results,
-        query,
-        count: results.length,
-      };
+    let results;
+    try {
+      results = await executeSearch();
     } catch (error) {
-      const reason = error instanceof Error ? error.message : "unknown error";
-      throw new Error(`Documentation search failed: ${reason}`);
+      const shouldRetry =
+        error instanceof Error &&
+        error.message.includes("Failed to load FAISS index");
+
+      if (!shouldRetry) {
+        const reason = error instanceof Error ? error.message : "unknown error";
+        throw new Error(`Documentation search failed: ${reason}`);
+      }
+
+      // Automatically ingest docs to seed the vector store, then retry once
+      await ingestLocalDocs({ vectorStore: vectorStoreConfig });
+      results = await executeSearch();
     }
+
+    return {
+      results,
+      query,
+      count: results.length,
+    };
   },
 };
