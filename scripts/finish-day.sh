@@ -37,6 +37,14 @@ if ! git show-ref --verify --quiet "refs/heads/$BRANCH"; then
   exit 1
 fi
 
+# Publish or update the remote branch so it stays in sync
+if git ls-remote --heads "$REMOTE" "$BRANCH" >/dev/null 2>&1; then
+  echo "Updating remote branch $REMOTE/$BRANCH."
+else
+  echo "Publishing branch $BRANCH to $REMOTE."
+fi
+git push -u "$REMOTE" "$BRANCH"
+
 # Update base
 git checkout "$BASE"
 git pull --ff-only "$REMOTE" "$BASE"
