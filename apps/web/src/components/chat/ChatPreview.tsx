@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { ChatList, ChatMessage } from "./ChatList";
 import { ChatInput } from "./ChatInput";
-import AgentSelector from "./AgentSelector";
+import AgentSelector from "../agents/AgentSelector";
 import { runAgent } from "@/lib/api/agents";
 import { Button } from "@/components/ui/button";
 

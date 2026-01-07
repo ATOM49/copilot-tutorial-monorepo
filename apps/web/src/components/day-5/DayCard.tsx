@@ -7,7 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { ChatPreview } from "./ChatPreview";
+import { ChatPreview } from "../chat/ChatPreview";
 
 export function DayCard() {
   return (

@@ -3,9 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import AgentSelector from "@/components/day-5/AgentSelector";
-import { ChatList, type ChatMessage } from "@/components/day-5/ChatList";
-import { ChatInput } from "@/components/day-5/ChatInput";
+import AgentSelector from "@/components/agents/AgentSelector";
+import { ChatList, type ChatMessage } from "@/components/chat/ChatList";
+import { ChatInput } from "@/components/chat/ChatInput";
 import { runAgentStream } from "@/lib/api/agents";
 
 export function DayCard() {

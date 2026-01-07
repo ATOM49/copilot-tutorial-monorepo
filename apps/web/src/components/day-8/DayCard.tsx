@@ -8,11 +8,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { ToolAllowlist } from "@/components/ToolAllowlist";
+import { ToolAllowlist } from "@/components/agents/ToolAllowlist";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { StreamingToolChat } from "./StreamingToolChat";
+import AgentSelector from "@/components/agents/AgentSelector";
+import { StreamingToolChat } from "../chat/StreamingToolChat";
 
 interface ToolMetadata {
   id: string;
@@ -30,6 +31,7 @@ export function DayCard() {
   const [agentToolAllowlists, setAgentToolAllowlists] = useState<
     Record<string, string[]>
   >({});
+  const [selectedChatAgent, setSelectedChatAgent] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -221,7 +223,20 @@ export function DayCard() {
 
         <Separator />
 
-        <StreamingToolChat />
+        <div className="space-y-3">
+          <div>
+            <h3 className="font-semibold text-sm">Streaming Agent Preview</h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              Pick an agent to test live tool execution.
+            </p>
+          </div>
+
+          <AgentSelector onSelect={setSelectedChatAgent} />
+        </div>
+
+        <StreamingToolChat
+          selectedAgent={selectedChatAgent || undefined}
+        />
       </CardContent>
     </Card>
   );
