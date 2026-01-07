@@ -158,3 +158,43 @@ export async function runAgentStream(
 }
 
 export default fetchAgents;
+
+export type IngestDocsResponse = {
+  ok: true;
+  stats: {
+    docs: number;
+    chunks: number;
+    embeddings: number;
+    indexPath: string;
+    durationMs: number;
+  };
+};
+
+export async function ingestDocs(apiBase?: string): Promise<IngestDocsResponse> {
+  const base = apiBase || defaultBase;
+  const res = await fetch(`${base}/copilot/rag/ingest`, {
+    method: "POST",
+    credentials: "include",
+  });
+
+  const text = await res.text().catch(() => "");
+  let payload: any = {};
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = {};
+    }
+  }
+
+  if (!res.ok) {
+    const message = payload?.error ?? `HTTP ${res.status} ${res.statusText}`;
+    throw new Error(message);
+  }
+
+  if (payload?.ok === true && payload.stats) {
+    return payload as IngestDocsResponse;
+  }
+
+  throw new Error(payload?.error ?? "Failed to ingest docs");
+}

@@ -11,9 +11,8 @@ export type LocalDoc = {
   updatedAt?: string;
 };
 
-export const DEFAULT_LOCAL_DOCS_DIR = fileURLToPath(
-  new URL("../../docs", import.meta.url)
-);
+const PACKAGE_ROOT = fileURLToPath(new URL("..", import.meta.url));
+export const DEFAULT_LOCAL_DOCS_DIR = path.join(PACKAGE_ROOT, "docs");
 
 function inferTitle(content: string, fallback: string): string {
   const lines = content.split(/\r?\n/);

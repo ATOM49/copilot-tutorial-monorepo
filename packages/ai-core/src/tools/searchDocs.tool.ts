@@ -1,17 +1,26 @@
 import { z } from "zod/v3";
 import type { ToolDefinition, ToolContext } from "./ToolDefinition.js";
+import {
+  embedQuery,
+  similaritySearch,
+  type VectorStoreConfig,
+} from "../rag/04_vectorStore.js";
 
-/**
- * Input schema for searchDocs tool
- */
+const SNIPPET_LENGTH = 320;
+
 export const SearchDocsInputSchema = z.object({
   query: z.string().min(1, "Query is required"),
   limit: z.number().int().min(1).max(20).default(5),
+  vectorStore: z
+    .object({
+      indexPath: z.string().optional(),
+      embedModel: z.string().optional(),
+      apiKey: z.string().optional(),
+    })
+    .partial()
+    .optional(),
 });
 
-/**
- * Output schema for searchDocs tool
- */
 export const SearchDocsOutputSchema = z.object({
   results: z.array(
     z.object({
@@ -28,17 +37,21 @@ export const SearchDocsOutputSchema = z.object({
 export type SearchDocsInput = z.infer<typeof SearchDocsInputSchema>;
 export type SearchDocsOutput = z.infer<typeof SearchDocsOutputSchema>;
 
-/**
- * Search Docs Tool (stub)
- * Searches documentation for relevant content
- * Currently returns mock results; will be wired to RAG system in later days
- */
+function summarizeSnippet(text: string): string {
+  const condensed = text.replace(/\s+/g, " ").trim();
+  if (condensed.length <= SNIPPET_LENGTH) {
+    return condensed;
+  }
+  return `${condensed.slice(0, SNIPPET_LENGTH).trimEnd()}…`;
+}
+
 export const searchDocsTool: ToolDefinition<
   typeof SearchDocsInputSchema,
   typeof SearchDocsOutputSchema
 > = {
   id: "search-docs",
   name: "Search Documentation",
+  description: "Search the ingested platform docs via FAISS similarity search.",
   inputSchema: SearchDocsInputSchema,
   permissions: {
     requiredRoles: ["admin"],
@@ -49,47 +62,32 @@ export const searchDocsTool: ToolDefinition<
     input: SearchDocsInput,
     _context: ToolContext
   ): Promise<SearchDocsOutput> {
-    // Stub implementation - return mock results for now
-    // Real implementation will query a vector store
-    const mockResults = [
-      {
-        id: "doc-1",
-        title: "Getting Started with the Platform",
-        snippet: `Learn the basics of the Copilot platform. This guide covers workspace setup, 
-          authentication, and running your first agent...`,
-        score: 0.92,
-      },
-      {
-        id: "doc-2",
-        title: "Agent Definition Guide",
-        snippet: `Agents are the core abstraction. Each agent has an id, name, input schema, 
-          output schema, and a run function that processes requests...`,
-        score: 0.88,
-      },
-      {
-        id: "doc-3",
-        title: "Tool Registry and Safety",
-        snippet: `Tools are reusable utilities that agents can call. The ToolRegistry manages 
-          registration and per-agent allowlisting for security...`,
-        score: 0.85,
-      },
-    ];
+    const query = input.query.trim();
+    if (!query) {
+      throw new Error("Query is required");
+    }
 
-    // Filter based on query relevance (simple substring match for stub)
-    const filtered = mockResults.filter(
-      (r) =>
-        r.title.toLowerCase().includes(input.query.toLowerCase()) ||
-        r.snippet.toLowerCase().includes(input.query.toLowerCase())
-    );
+    const vectorStoreConfig: VectorStoreConfig | undefined = input.vectorStore;
 
-    const results = (
-      filtered.length > 0 ? filtered : mockResults
-    ).slice(0, input.limit);
+    try {
+      const { embedding, resolved } = await embedQuery(query, vectorStoreConfig);
+      const matches = await similaritySearch(embedding, input.limit, resolved);
 
-    return {
-      results,
-      query: input.query,
-      count: results.length,
-    };
+      const results = matches.map(({ chunk, score }) => ({
+        id: chunk.id,
+        title: chunk.title ?? chunk.section ?? chunk.docId,
+        snippet: summarizeSnippet(chunk.content),
+        score,
+      }));
+
+      return {
+        results,
+        query,
+        count: results.length,
+      };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "unknown error";
+      throw new Error(`Documentation search failed: ${reason}`);
+    }
   },
 };
