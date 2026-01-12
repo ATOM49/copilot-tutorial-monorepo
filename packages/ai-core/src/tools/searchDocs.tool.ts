@@ -1,4 +1,4 @@
-import { z } from "zod/v3";
+import { z } from "zod";
 import type { ToolDefinition, ToolContext } from "./ToolDefinition.js";
 import {
   embedQuery,

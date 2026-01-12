@@ -1,11 +1,7 @@
-import { z } from "zod/v3";
-import type { AgentDefinition, AgentContext } from "./AgentDefinition.js";
-import {
-  withDefaultAgentContext,
-  createAgentModel,
-  runWithResolvedTools,
-} from "./agentUtils.js";
-import { runStructured } from "../runners/runStructured.js";
+import { z } from "zod";
+import type { BaseMessage } from "@langchain/core/messages";
+import type { AgentContext } from "./AgentDefinition.js";
+import { BaseAgent } from "./BaseAgent.js";
 import { searchDocsTool } from "../tools/searchDocs.tool.js";
 
 const AGENT_ID = "monorepo-rag";
@@ -35,25 +31,30 @@ const AnswerSchema = z.object({
 export type MonorepoAgentInput = z.infer<typeof MonorepoAgentInputSchema>;
 export type MonorepoAgentOutput = z.infer<typeof MonorepoAgentOutputSchema>;
 
-export const monorepoAgent: AgentDefinition<
+class MonorepoAgent extends BaseAgent<
   typeof MonorepoAgentInputSchema,
   typeof MonorepoAgentOutputSchema
-> = {
-  id: AGENT_ID,
-  name: "Monorepo RAG Copilot",
-  inputSchema: MonorepoAgentInputSchema,
-  outputSchema: MonorepoAgentOutputSchema,
+> {
+  constructor() {
+    super({
+      id: AGENT_ID,
+      name: "Monorepo RAG Copilot",
+      inputSchema: MonorepoAgentInputSchema,
+      outputSchema: MonorepoAgentOutputSchema,
+    });
+  }
 
-  run: async (
-    input: MonorepoAgentInput,
-    context?: AgentContext
-  ): Promise<MonorepoAgentOutput> => {
-    const toolContext = withDefaultAgentContext(AGENT_ID, context);
-    const baseModel = createAgentModel({ temperature: 0 });
+  protected shouldUseToolLoop(): boolean {
+    return true;
+  }
 
+  protected getModelOptions() {
+    return { temperature: 0 };
+  }
+
+  protected buildSystemPrompt(input: MonorepoAgentInput): string {
     const limit = input.limit ?? 5;
-
-    const system = [
+    return [
       "You are the Monorepo Documentation Copilot.",
       "You have access to a search-docs tool to find relevant documentation.",
       "",
@@ -78,28 +79,62 @@ export const monorepoAgent: AgentDefinition<
       "",
       "Your role is to be a reliable documentation assistant, not a general knowledge chatbot.",
     ].join("\n\n");
+  }
 
-    const conversation = await runWithResolvedTools({
-      agentId: AGENT_ID,
-      model: baseModel,
-      system,
-      userInput: input.question,
-      context: toolContext,
+  protected buildUserInput(input: MonorepoAgentInput): string {
+    return input.question;
+  }
+
+  protected async handleMessages(
+    args: {
+      messages: BaseMessage[];
+      context: AgentContext;
+      model: any;
+      input: MonorepoAgentInput;
+    },
+    _source: "tool" | "prompt"
+  ): Promise<MonorepoAgentOutput> {
+    const { messages, context, model, input } = args;
+    const { citations, toolWasCalled } = this.extractCitations(messages);
+
+    if (!toolWasCalled) {
+      throw new Error(
+        "Agent did not use the search-docs tool as required. The agent must retrieve documentation before answering."
+      );
+    }
+
+    const { answer, confidence } = await this.runStructuredExtraction({
+      schema: AnswerSchema as any,
+      messages,
+      model,
+      context,
+      input,
+      strict: false,
     });
 
-    // Extract citations from tool results in conversation
+    return {
+      answer,
+      citations,
+      confidence,
+    };
+  }
+
+  private extractCitations(conversation: BaseMessage[]): {
+    citations: Array<{ docId: string; chunkId: string; snippet: string }>;
+    toolWasCalled: boolean;
+  } {
     const citations: Array<{ docId: string; chunkId: string; snippet: string }> = [];
     let toolWasCalled = false;
-    
+
     for (const msg of conversation) {
-      if (msg._getType() === "tool" && msg.content) {
+      if (msg._getType() === "tool" && (msg as any).content) {
         toolWasCalled = true;
         try {
-          const toolResult = typeof msg.content === "string" 
-            ? JSON.parse(msg.content)
-            : msg.content;
-          
-          if (toolResult.results && Array.isArray(toolResult.results)) {
+          const rawContent = (msg as any).content;
+          const toolResult =
+            typeof rawContent === "string" ? JSON.parse(rawContent) : rawContent;
+
+          if (toolResult?.results && Array.isArray(toolResult.results)) {
             for (const result of toolResult.results) {
               if (result.docId && result.chunkId && result.snippet) {
                 citations.push({
@@ -111,30 +146,13 @@ export const monorepoAgent: AgentDefinition<
             }
           }
         } catch {
-          // Skip non-JSON or invalid tool results
+          // Ignore parsing errors
         }
       }
     }
 
-    // Ensure the agent actually used the retrieval tool
-    if (!toolWasCalled) {
-      throw new Error(
-        "Agent did not use the search-docs tool as required. The agent must retrieve documentation before answering."
-      );
-    }
+    return { citations, toolWasCalled };
+  }
+}
 
-    const { answer, confidence } = await runStructured({
-      model: baseModel,
-      schema: AnswerSchema as any,
-      messages: conversation,
-      signal: toolContext.signal,
-      strict: false,
-    });
-
-    return {
-      answer,
-      citations,
-      confidence,
-    };
-  },
-};
+export const monorepoAgent = new MonorepoAgent();

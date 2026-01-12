@@ -1,10 +1,8 @@
 import type { FastifyPluginAsync } from "fastify";
-import {
-  createOpenAIChatModel,
-  runStructured,
-} from "@copilot/ai-core";
+import { createOpenAIChatModel, HumanMessage, runStructured, SystemMessage } from "@copilot/ai-core";
+
 import { DemoOutputSchema } from "@copilot/shared";
-import { z } from "zod/v3";
+import { z } from "zod";
 
 export const copilotDemoRoutes: FastifyPluginAsync = async (app) => {
   app.post("/copilot/demo", async (req) => {
@@ -16,10 +14,17 @@ export const copilotDemoRoutes: FastifyPluginAsync = async (app) => {
       apiKey: process.env.OPENAI_API_KEY,
     });
 
+    const messages = [
+      new SystemMessage(
+        "You are a helpful Copilot demo. Return structured JSON that matches the provided schema."
+      ),
+      new HumanMessage(input),
+    ];
+
     const result = await runStructured({
       model,
-      input,
       schema: DemoOutputSchema,
+      messages,
     });
 
     return { ok: true as const, result };

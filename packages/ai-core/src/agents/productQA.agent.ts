@@ -1,12 +1,6 @@
-import type { BaseMessage } from "@langchain/core/messages";
-import { z } from "zod/v3";
-import type { AgentDefinition, AgentContext } from "./AgentDefinition.js";
-import {
-  createAgentModel,
-  withDefaultAgentContext,
-  runWithResolvedTools,
-} from "./agentUtils.js";
-import { runStructured } from "../runners/runStructured.js";
+import { z } from "zod";
+import type { AgentContext } from "./AgentDefinition.js";
+import { BaseAgent } from "./BaseAgent.js";
 
 /**
  * Input schema for Product Q&A agent
@@ -30,28 +24,29 @@ export type ProductQAInput = z.infer<typeof ProductQAInputSchema>;
 export type ProductQAOutput = z.infer<typeof ProductQAOutputSchema>;
 
 const AGENT_ID = "product-qa";
-/**
- * Product Q&A Agent
- * Answers questions about products using structured JSON output
- */
-export const productQAAgent: AgentDefinition<
+
+class ProductQAAgent extends BaseAgent<
   typeof ProductQAInputSchema,
   typeof ProductQAOutputSchema
-> = {
-  id: AGENT_ID,
-  name: "Product Q&A",
-  inputSchema: ProductQAInputSchema,
-  outputSchema: ProductQAOutputSchema,
+> {
+  constructor() {
+    super({
+      id: AGENT_ID,
+      name: "Product Q&A",
+      inputSchema: ProductQAInputSchema,
+      outputSchema: ProductQAOutputSchema,
+    });
+  }
 
-  run: async (
-    input: ProductQAInput,
-    context?: AgentContext
-  ): Promise<ProductQAOutput> => {
-    const baseModel = createAgentModel({ temperature: 0 });
+  protected shouldUseToolLoop(): boolean {
+    return true;
+  }
 
-    const toolContext = withDefaultAgentContext(AGENT_ID, context);
-    const signal = toolContext.signal;
+  protected getModelOptions() {
+    return { temperature: 0 };
+  }
 
+  protected buildSystemPrompt(input: ProductQAInput, context: AgentContext) {
     const systemSections = [
       "You are a Product Q&A copilot.",
       "Use tools when needed. If a tool is not necessary, answer directly.",
@@ -60,25 +55,12 @@ export const productQAAgent: AgentDefinition<
       context ? `User: ${context.userId} | Tenant: ${context.tenantId}` : "",
     ].filter(Boolean);
 
-    const system = systemSections.join("\n\n");
-    const conversation: BaseMessage[] = await runWithResolvedTools({
-      agentId: AGENT_ID,
-      model: baseModel,
-      system,
-      userInput: input.question,
-      context: toolContext,
-    });
+    return systemSections.join("\n\n");
+  }
 
-    const structuredMessages: BaseMessage[] = [...conversation];
+  protected buildUserInput(input: ProductQAInput): string {
+    return input.question;
+  }
+}
 
-    const final = await runStructured({
-      model: baseModel,
-      schema: ProductQAOutputSchema as any,
-      messages: structuredMessages,
-      strict: false,
-      signal,
-    });
-
-    return final;
-  },
-};
+export const productQAAgent = new ProductQAAgent();

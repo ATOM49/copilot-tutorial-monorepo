@@ -42,3 +42,46 @@ export class ModelError extends CopilotError {
     this.name = "ModelError";
   }
 }
+
+export class PendingActionError extends CopilotError {
+  constructor(message: string, code: string, statusCode: number) {
+    super(message, code, statusCode);
+    this.name = "PendingActionError";
+  }
+}
+
+export class PendingActionNotFoundError extends PendingActionError {
+  constructor(actionId: string) {
+    super(`Pending action '${actionId}' not found`, "ACTION_NOT_FOUND", 404);
+    this.name = "PendingActionNotFoundError";
+  }
+}
+
+export class PendingActionExpiredError extends PendingActionError {
+  constructor(actionId: string) {
+    super(`Pending action '${actionId}' expired`, "ACTION_EXPIRED", 410);
+    this.name = "PendingActionExpiredError";
+  }
+}
+
+export class PendingActionMismatchError extends PendingActionError {
+  constructor() {
+    super(
+      "Action confirmation requester does not match the original proposer",
+      "ACTION_MISMATCH",
+      403
+    );
+    this.name = "PendingActionMismatchError";
+  }
+}
+
+export class PendingActionStateError extends PendingActionError {
+  constructor(status: string) {
+    super(
+      `Pending action is not executable in '${status}' state`,
+      "ACTION_STATE_INVALID",
+      409
+    );
+    this.name = "PendingActionStateError";
+  }
+}

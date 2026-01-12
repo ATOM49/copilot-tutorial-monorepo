@@ -71,12 +71,16 @@ export async function runWithResolvedTools(args: {
   const toolDefs = resolveToolsForAgent(agentId, context);
 
   if (toolDefs.length) {
-    const { tools, toolsByName } = toolDefsToLangChainTools(toolDefs, context);
+    const { tools, toolsByName, toolDefsByName } = toolDefsToLangChainTools(
+      toolDefs,
+      context
+    );
     const modelWithTools = model.bindTools(tools);
     console.log({ emit: context.emit });
     return runToolCallingLoop({
       modelWithTools,
       toolsByName,
+      toolDefsByName,
       system,
       userInput,
       signal: context.signal,

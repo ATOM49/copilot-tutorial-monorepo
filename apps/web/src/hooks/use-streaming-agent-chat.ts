@@ -6,6 +6,10 @@ import {
 } from "@/components/chat/EventTimeline";
 import { runAgentStream } from "@/lib/api/agents";
 
+interface UseStreamingAgentChatOptions {
+  inputBuilder?: (text: string) => Record<string, unknown>;
+}
+
 interface UseStreamingAgentChatResult {
   messages: ChatMessage[];
   timeline: TimelineEvent[];
@@ -16,12 +20,25 @@ interface UseStreamingAgentChatResult {
 }
 
 export function useStreamingAgentChat(
-  selectedAgent?: string
+  selectedAgent?: string,
+  options: UseStreamingAgentChatOptions = {}
 ): UseStreamingAgentChatResult {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const stopRef = useRef<(() => void) | null>(null);
+  const defaultInputBuilder = useCallback(
+    (text: string) => ({ question: text }),
+    []
+  );
+  const { inputBuilder } = options;
+  const buildInput = useCallback(
+    (text: string) => {
+      const builder = inputBuilder ?? defaultInputBuilder;
+      return builder(text);
+    },
+    [defaultInputBuilder, inputBuilder]
+  );
 
   useEffect(() => {
     return () => {
@@ -95,12 +112,14 @@ export function useStreamingAgentChat(
       };
       setMessages((prev) => [...prev, aiMessage]);
 
-      recordEvent("request", { agentId: selectedAgent, question: text });
+      const payload = buildInput(text) ?? { question: text };
+
+      recordEvent("request", { agentId: selectedAgent, input: payload });
 
       try {
         const stop = await runAgentStream(
           selectedAgent,
-          { question: text },
+          payload,
           (event, data) => {
             recordEvent(event, data);
 
@@ -157,7 +176,7 @@ export function useStreamingAgentChat(
         stopRef.current = null;
       }
     },
-    [recordEvent, selectedAgent]
+    [buildInput, recordEvent, selectedAgent]
   );
 
   const cancel = useCallback(() => {

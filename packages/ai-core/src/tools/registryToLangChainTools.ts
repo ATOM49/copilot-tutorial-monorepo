@@ -1,6 +1,6 @@
 import { tool as langChainTool } from "@langchain/core/tools";
 import type { ToolInterface } from "@langchain/core/tools";
-import { z } from "zod/v3";
+import { z } from "zod";
 import type { ToolAuditEvent } from "@copilot/shared";
 import type { ToolDefinition, ToolContext } from "./ToolDefinition.js";
 import { ToolPermissionError } from "./errors.js";
@@ -181,8 +181,19 @@ export function toolDefToLangChainTool(
 export function toolDefsToLangChainTools(
   defs: AnyToolDefinition[],
   ctx: ToolContext
-): { tools: ToolInterface[]; toolsByName: Map<string, ToolInterface> } {
-  const tools = defs.map((d) => toolDefToLangChainTool(d, ctx));
+): {
+  tools: ToolInterface[];
+  toolsByName: Map<string, ToolInterface>;
+  toolDefsByName: Map<string, AnyToolDefinition>;
+} {
+  const entries = defs.map((def) => ({
+    def,
+    tool: toolDefToLangChainTool(def, ctx),
+  }));
+  const tools = entries.map((entry) => entry.tool);
   const toolsByName = new Map(tools.map((t) => [t.name, t]));
-  return { tools, toolsByName };
+  const toolDefsByName = new Map(
+    entries.map((entry) => [entry.tool.name, entry.def])
+  );
+  return { tools, toolsByName, toolDefsByName };
 }
