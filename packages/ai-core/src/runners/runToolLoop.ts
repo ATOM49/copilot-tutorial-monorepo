@@ -9,6 +9,8 @@ import { Runnable } from "@langchain/core/runnables";
 import type { ToolInterface } from "@langchain/core/tools";
 import { ChatOpenAICallOptions } from "@langchain/openai";
 import { ToolPermissionError } from "../tools/errors.js";
+import type { ToolDefinition } from "../tools/ToolDefinition.js";
+import { toolRequiresConfirmation } from "../tools/ToolDefinition.js";
 
 type Emit = (evt: any) => void;
 
@@ -20,7 +22,8 @@ type ToolErrorReason =
   | "TIMEOUT"
   | "EXECUTION_ERROR"
   | "CANCELLED"
-  | "PERMISSION_DENIED";
+  | "PERMISSION_DENIED"
+  | "CONFIRMATION_REQUIRED";
 
 const SAFE_TOOL_ERROR_MESSAGES: Record<ToolErrorReason, string> = {
   NOT_FOUND: "Tool is not available for this agent.",
@@ -28,6 +31,8 @@ const SAFE_TOOL_ERROR_MESSAGES: Record<ToolErrorReason, string> = {
   EXECUTION_ERROR: "Tool failed to execute safely.",
   CANCELLED: "Tool run was cancelled before it finished.",
   PERMISSION_DENIED: "Tool usage is not permitted for this request.",
+  CONFIRMATION_REQUIRED:
+    "This tool requires explicit confirmation before it can run.",
 };
 
 function sanitizeDetail(detail?: string): string | undefined {
@@ -86,6 +91,7 @@ export async function runToolCallingLoop(args: {
     ChatOpenAICallOptions
   >;
   toolsByName: Map<string, ToolInterface>;
+  toolDefsByName: Map<string, ToolDefinition>;
   system: string;
   userInput: string;
   signal?: AbortSignal;
@@ -96,6 +102,7 @@ export async function runToolCallingLoop(args: {
   const {
     modelWithTools,
     toolsByName,
+    toolDefsByName,
     system,
     userInput,
     signal,
@@ -122,6 +129,7 @@ export async function runToolCallingLoop(args: {
 
     for (const call of toolCalls) {
       const toolImpl = toolsByName.get(call.name);
+      const toolDef = toolDefsByName.get(call.name);
 
       emit?.({ type: "tool_start", name: call.name });
 
@@ -137,6 +145,22 @@ export async function runToolCallingLoop(args: {
           name: call.name,
           ok: false,
           reason: "not_found",
+        });
+        continue;
+      }
+
+      if (toolDef && toolRequiresConfirmation(toolDef)) {
+        messages.push(
+          new ToolMessage({
+            tool_call_id: call.id,
+            content: safeToolErrorContent("CONFIRMATION_REQUIRED"),
+          })
+        );
+        emit?.({
+          type: "tool_end",
+          name: call.name,
+          ok: false,
+          reason: "confirmation_required",
         });
         continue;
       }

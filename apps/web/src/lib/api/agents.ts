@@ -1,5 +1,9 @@
-import { ListAgentsResponseSchema } from "@copilot/shared";
-import type { ListAgentsResponse, AgentMetadata } from "@copilot/shared";
+import { ListAgentsResponseSchema, ConfirmPendingActionResponseSchema } from "@copilot/shared";
+import type {
+  ListAgentsResponse,
+  AgentMetadata,
+  ConfirmPendingActionResponse,
+} from "@copilot/shared";
 
 const defaultBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
@@ -155,6 +159,41 @@ export async function runAgentStream(
       reader.cancel();
     } catch {}
   };
+}
+
+export async function confirmPendingAction(
+  actionId: string,
+  apiBase?: string
+): Promise<ConfirmPendingActionResponse> {
+  const base = apiBase || defaultBase;
+  const res = await fetch(`${base}/copilot/actions/confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ actionId }),
+  });
+
+  const text = await res.text().catch(() => "");
+  let payload: any = {};
+  if (text) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = {};
+    }
+  }
+
+  if (!res.ok) {
+    throw new Error(
+      payload?.error ?? `HTTP ${res.status} ${res.statusText}`
+    );
+  }
+
+  try {
+    return ConfirmPendingActionResponseSchema.parse(payload);
+  } catch (error) {
+    throw new Error("Invalid confirmation response from API");
+  }
 }
 
 export default fetchAgents;

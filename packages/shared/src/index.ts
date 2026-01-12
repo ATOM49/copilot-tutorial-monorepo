@@ -28,3 +28,15 @@ export {
 
 export { EnvSchema, getEnv, DEFAULTS, type Env } from "./env.js";
 export type { ToolAuditEvent } from "./audit.js";
+export {
+  ActionHelperOutputSchema,
+  ProposedActionSchema,
+  ActionRiskSchema,
+  ConfirmPendingActionRequestSchema,
+  ConfirmPendingActionResponseSchema,
+  type ActionHelperOutput,
+  type ProposedAction,
+  type ActionRisk,
+  type ConfirmPendingActionRequest,
+  type ConfirmPendingActionResponse,
+} from "./actionHelper.js";

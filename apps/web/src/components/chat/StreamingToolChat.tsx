@@ -14,6 +14,7 @@ interface StreamingToolChatProps {
   renderMessage?: (message: ChatMessage) => ReactNode;
   placeholder?: string;
   title?: string;
+  inputBuilder?: (text: string) => Record<string, unknown>;
 }
 
 export function StreamingToolChat({
@@ -21,9 +22,10 @@ export function StreamingToolChat({
   renderMessage,
   placeholder = "Ask Copilot (tools)...",
   title = "Streaming Agent Preview",
+  inputBuilder,
 }: StreamingToolChatProps) {
   const { messages, timeline, loading, sendMessage, cancel, reset } =
-    useStreamingAgentChat(selectedAgent);
+    useStreamingAgentChat(selectedAgent, { inputBuilder });
   const { chatContainerRef, showNewIndicator, scrollToBottom, dismissNewIndicator } =
     useChatScroll(messages.length);
 

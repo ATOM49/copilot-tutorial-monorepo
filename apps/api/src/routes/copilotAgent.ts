@@ -4,10 +4,13 @@ import {
   agentRegistry,
   productQAAgent,
   monorepoAgent,
+  ticketHandlerAgent,
   toolRegistry,
   timeTool,
   calculatorTool,
   searchDocsTool,
+  createTicketTool,
+  toolRequiresConfirmation,
 } from "@copilot/ai-core";
 import type { AgentContext, ToolDefinition } from "@copilot/ai-core";
 import {
@@ -15,21 +18,69 @@ import {
   type RunAgentRequest,
   type RunAgentSuccessResponse,
   type ListAgentsResponse,
+  ConfirmPendingActionRequestSchema,
+  type ConfirmPendingActionRequest,
+  type ConfirmPendingActionResponse,
+  type ProposedAction,
 } from "@copilot/shared";
-import { AgentNotFoundError, TimeoutError, ModelError, ValidationError } from "../lib/errors.js";
+import {
+  AgentNotFoundError,
+  TimeoutError,
+  ModelError,
+  ValidationError,
+} from "../lib/errors.js";
+import { actionLedger } from "../lib/actionLedger.js";
 
 // Register agents on module load
 agentRegistry.register(productQAAgent);
 agentRegistry.register(monorepoAgent);
+agentRegistry.register(ticketHandlerAgent);
 
 // Register tools on module load
 toolRegistry.register(timeTool);
 toolRegistry.register(calculatorTool);
 toolRegistry.register(searchDocsTool);
+toolRegistry.register(createTicketTool);
 
 // Set up allowlists for agents (can be extended later)
 toolRegistry.setAllowlist("product-qa", ["search-docs", "time", "calculator"]);
 toolRegistry.setAllowlist("monorepo-rag", ["search-docs"]);
+toolRegistry.setAllowlist("ticket-handler", ["create-ticket"]);
+
+function persistPendingActions<T extends unknown>(
+  result: T,
+  context: AgentContext
+): T {
+  if (!result || typeof result !== "object") {
+    return result;
+  }
+
+  const proposed = Array.isArray((result as any).proposedActions)
+    ? ((result as any).proposedActions as ProposedAction[])
+    : [];
+
+  if (!proposed.length) {
+    return result;
+  }
+
+  const { agentId, userId, tenantId } = context;
+
+  if (!agentId || !userId || !tenantId) {
+    return result;
+  }
+
+  const stored = actionLedger.registerMany(proposed, {
+    agentId,
+    userId,
+    tenantId,
+    traceId: context.traceId,
+  });
+
+  return {
+    ...result,
+    proposedActions: stored,
+  } as T;
+}
 /**
  * Helper to run agent with timeout and abort handling
  *
@@ -44,7 +95,9 @@ async function runAgentWithTimeout<T>(
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
       abortController.abort();
-      reject(new TimeoutError(`Agent execution exceeded ${timeoutMs}ms timeout`));
+      reject(
+        new TimeoutError(`Agent execution exceeded ${timeoutMs}ms timeout`)
+      );
     }, timeoutMs);
 
     agentFn(abortController.signal)
@@ -67,7 +120,7 @@ export const copilotAgentRoutes: FastifyPluginAsync = async (app) => {
   /**
    * POST /copilot/run
    * Execute an agent by ID with validated input, timeout handling, and proper error normalization
-   * 
+   *
    * This endpoint implements all Day 4 requirements:
    * 1. Type-safe request validation via Zod schemas
    * 2. Auth context passed to agents
@@ -76,96 +129,110 @@ export const copilotAgentRoutes: FastifyPluginAsync = async (app) => {
    */
   app.post<{
     Body: RunAgentRequest;
-  }>("/copilot/run", {
-    schema: {
-      body: RunAgentRequestSchema,
+  }>(
+    "/copilot/run",
+    {
+      schema: {
+        body: RunAgentRequestSchema,
+      },
     },
-  }, async (req, reply) => {
-    const body: RunAgentRequest = req.body;
-    const startTime = Date.now();
-    const { agentId, input, timeout } = body;
+    async (req, reply) => {
+      const body: RunAgentRequest = req.body;
+      const startTime = Date.now();
+      const { agentId, input, timeout } = body;
 
-    // Get agent from registry (throws AgentNotFoundError if not found)
-    const agent = agentRegistry.get(agentId);
-    if (!agent) {
-      throw new AgentNotFoundError(agentId);
-    }
+      // Get agent from registry (throws AgentNotFoundError if not found)
+      const agent = agentRegistry.get(agentId);
+      if (!agent) {
+        throw new AgentNotFoundError(agentId);
+      }
 
-    // Validate input against agent's specific schema
-    let validatedInput;
-    try {
-      validatedInput = agent.inputSchema.parse(input);
-    } catch (error) {
-      throw new ValidationError("Invalid input for agent", error);
-    }
+      // Validate input against agent's specific schema
+      let validatedInput;
+      try {
+        validatedInput = agent.inputSchema.parse(input);
+      } catch (error) {
+        throw new ValidationError("Invalid input for agent", error);
+      }
 
-    const allowedTools = toolRegistry.getAllowedTools(agentId);
-    const requestId = req.id;
-    const traceId = randomUUID();
+      const allowedTools = toolRegistry.getAllowedTools(agentId);
+      const requestId = req.id;
+      const traceId = randomUUID();
 
-    // Extract auth context from request (populated by authContext plugin)
-    const agentContext: AgentContext = {
-      userId: req.auth.userId,
-      tenantId: req.auth.tenantId,
-      roles: req.auth.roles,
-      tools: allowedTools,
-      toolRegistry,
-      requestId,
-      traceId,
-      agentId: agent.id,
-      logger: req.log,
-    };
-
-    req.log.info({
-      agentId,
-      userId: agentContext.userId,
-      tenantId: agentContext.tenantId,
-    }, "Executing agent");
-
-    // Execute agent with timeout handling
-    try {
-      const result = await runAgentWithTimeout(
-        (signal) => agent.run(validatedInput, { ...agentContext, signal }),
-        timeout ?? 30000 // Default 30s timeout
-      );
-
-      const executionTimeMs = Date.now() - startTime;
-      
-      req.log.info({
-        agentId,
-        executionTimeMs,
-      }, "Agent execution completed");
-
-      const response: RunAgentSuccessResponse = {
-        ok: true,
+      // Extract auth context from request (populated by authContext plugin)
+      const agentContext: AgentContext = {
+        userId: req.auth.userId,
+        tenantId: req.auth.tenantId,
+        roles: req.auth.roles,
+        tools: allowedTools,
+        toolRegistry,
+        requestId,
+        traceId,
         agentId: agent.id,
-        result,
-        executionTimeMs,
+        logger: req.log,
       };
 
-      return response;
-    } catch (error) {
-      // TimeoutError is already handled by error handler
-      if (error instanceof TimeoutError) {
+      req.log.info(
+        {
+          agentId,
+          userId: agentContext.userId,
+          tenantId: agentContext.tenantId,
+        },
+        "Executing agent"
+      );
+
+      // Execute agent with timeout handling
+      try {
+        const result = await runAgentWithTimeout(
+          (signal) => agent.run(validatedInput, { ...agentContext, signal }),
+          timeout ?? 30000 // Default 30s timeout
+        );
+
+        const persistedResult = persistPendingActions(result, agentContext);
+
+        const executionTimeMs = Date.now() - startTime;
+
+        req.log.info(
+          {
+            agentId,
+            executionTimeMs,
+          },
+          "Agent execution completed"
+        );
+
+        const response: RunAgentSuccessResponse = {
+          ok: true,
+          agentId: agent.id,
+          result: persistedResult,
+          executionTimeMs,
+        };
+
+        return response;
+      } catch (error) {
+        // TimeoutError is already handled by error handler
+        if (error instanceof TimeoutError) {
+          throw error;
+        }
+
+        // Wrap LLM/model errors
+        if (error instanceof Error) {
+          req.log.error(
+            {
+              err: error,
+              agentId,
+            },
+            "Agent execution failed"
+          );
+
+          throw new ModelError(`Agent execution failed: ${error.message}`, {
+            originalError: error.message,
+          });
+        }
+
         throw error;
       }
-
-      // Wrap LLM/model errors
-      if (error instanceof Error) {
-        req.log.error({
-          err: error,
-          agentId,
-        }, "Agent execution failed");
-        
-        throw new ModelError(
-          `Agent execution failed: ${error.message}`,
-          { originalError: error.message }
-        );
-      }
-
-      throw error;
     }
-  });
+  );
 
   /**
    * POST /copilot/stream
@@ -174,162 +241,258 @@ export const copilotAgentRoutes: FastifyPluginAsync = async (app) => {
    */
   app.post<{
     Body: RunAgentRequest;
-  }>("/copilot/stream", {
-    schema: {
-      body: RunAgentRequestSchema,
+  }>(
+    "/copilot/stream",
+    {
+      schema: {
+        body: RunAgentRequestSchema,
+      },
     },
-  }, async (req, reply) => {
-    const body: RunAgentRequest = req.body;
-    const { agentId, input, timeout } = body;
+    async (req, reply) => {
+      const body: RunAgentRequest = req.body;
+      const { agentId, input, timeout } = body;
 
-    // Get agent
-    const agent = agentRegistry.get(agentId);
-    if (!agent) {
-      throw new AgentNotFoundError(agentId);
-    }
+      // Get agent
+      const agent = agentRegistry.get(agentId);
+      if (!agent) {
+        throw new AgentNotFoundError(agentId);
+      }
 
-    // Validate input
-    let validatedInput;
-    try {
-      validatedInput = agent.inputSchema.parse(input);
-    } catch (error) {
-      throw new ValidationError("Invalid input for agent", error);
-    }
-
-    const allowedTools = toolRegistry.getAllowedTools(agentId);
-    const requestId = req.id;
-    const traceId = randomUUID();
-
-    // Extract auth context
-    const agentContext: AgentContext = {
-      userId: req.auth.userId,
-      tenantId: req.auth.tenantId,
-      roles: req.auth.roles,
-      tools: allowedTools,
-      toolRegistry,
-      requestId,
-      traceId,
-      agentId: agent.id,
-      logger: req.log,
-    };
-
-    // Prepare SSE response
-    const raw = reply.raw;
-    // Set CORS headers for hijacked response so browsers accept the streamed reply
-    const origin = req.headers.origin as string | undefined;
-    if (origin) {
-      raw.setHeader("Access-Control-Allow-Origin", origin);
-      raw.setHeader("Vary", "Origin");
-      raw.setHeader("Access-Control-Allow-Credentials", "true");
-    }
-
-    raw.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-    raw.setHeader("Cache-Control", "no-cache");
-    raw.setHeader("Connection", "keep-alive");
-    // Disable buffering (for some proxies)
-    raw.setHeader("X-Accel-Buffering", "no");
-    raw.flushHeaders?.();
-
-    // Tell Fastify we are managing the response manually
-    reply.hijack();
-
-    const writeEvent = (event: string, data: any) => {
+      // Validate input
+      let validatedInput;
       try {
-        const payload = typeof data === "string" ? data : JSON.stringify(data);
-        raw.write(`event: ${event}\n`);
-        raw.write(`data: ${payload}\n\n`);
-      } catch {
-        // ignore write errors
+        validatedInput = agent.inputSchema.parse(input);
+      } catch (error) {
+        throw new ValidationError("Invalid input for agent", error);
       }
-    };
 
-    const streamEmit: NonNullable<AgentContext["emit"]> = (evt) => {
-      if (!evt || typeof evt !== "object") return;
-      const type = (evt as { type?: string }).type;
+      const allowedTools = toolRegistry.getAllowedTools(agentId);
+      const requestId = req.id;
+      const traceId = randomUUID();
 
-      switch (type) {
-        case "status":
-          writeEvent("status", { status: (evt as { status?: string }).status, agentId });
-          break;
-        case "tool_start":
-        case "tool_end":
-          writeEvent("tool", { agentId, ...evt });
-          break;
-        default:
-          writeEvent("event", { agentId, ...evt });
+      // Extract auth context
+      const agentContext: AgentContext = {
+        userId: req.auth.userId,
+        tenantId: req.auth.tenantId,
+        roles: req.auth.roles,
+        tools: allowedTools,
+        toolRegistry,
+        requestId,
+        traceId,
+        agentId: agent.id,
+        logger: req.log,
+      };
+
+      // Prepare SSE response
+      const raw = reply.raw;
+      // Set CORS headers for hijacked response so browsers accept the streamed reply
+      const origin = req.headers.origin as string | undefined;
+      if (origin) {
+        raw.setHeader("Access-Control-Allow-Origin", origin);
+        raw.setHeader("Vary", "Origin");
+        raw.setHeader("Access-Control-Allow-Credentials", "true");
       }
-    };
 
-    // Heartbeat (keeps proxies from closing idle SSE connections)
-    const heartbeat = setInterval(() => {
+      raw.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+      raw.setHeader("Cache-Control", "no-cache");
+      raw.setHeader("Connection", "keep-alive");
+      // Disable buffering (for some proxies)
+      raw.setHeader("X-Accel-Buffering", "no");
+      raw.flushHeaders?.();
+
+      // Tell Fastify we are managing the response manually
+      reply.hijack();
+
+      const writeEvent = (event: string, data: any) => {
+        try {
+          const payload =
+            typeof data === "string" ? data : JSON.stringify(data);
+          raw.write(`event: ${event}\n`);
+          raw.write(`data: ${payload}\n\n`);
+        } catch {
+          // ignore write errors
+        }
+      };
+
+      const streamEmit: NonNullable<AgentContext["emit"]> = (evt) => {
+        if (!evt || typeof evt !== "object") return;
+        const type = (evt as { type?: string }).type;
+
+        switch (type) {
+          case "status":
+            writeEvent("status", {
+              status: (evt as { status?: string }).status,
+              agentId,
+            });
+            break;
+          case "tool_start":
+          case "tool_end":
+            writeEvent("tool", { agentId, ...evt });
+            break;
+          default:
+            writeEvent("event", { agentId, ...evt });
+        }
+      };
+
+      // Heartbeat (keeps proxies from closing idle SSE connections)
+      const heartbeat = setInterval(() => {
+        try {
+          raw.write(":\n\n");
+        } catch {
+          // ignore
+        }
+      }, 15000);
+
+      const startTime = Date.now();
+
+      // Abort on client disconnect
+      const abortController = new AbortController();
+      raw.on("close", () => {
+        abortController.abort();
+        clearInterval(heartbeat);
+      });
+
+      // Initial status (align to UI: thinking/running/done)
+      writeEvent("status", { status: "thinking", agentId });
+
       try {
-        raw.write(":\n\n");
-      } catch {
-        // ignore
+        const result = await runAgentWithTimeout(
+          (signal) =>
+            agent.run(validatedInput, {
+              ...agentContext,
+              emit: streamEmit,
+              signal,
+            }),
+          timeout ?? 30000,
+          abortController
+        );
+
+        const persistedResult = persistPendingActions(result, agentContext);
+
+        const executionTimeMs = Date.now() - startTime;
+
+        // Final result
+        writeEvent("result", {
+          ok: true,
+          agentId: agent.id,
+          result: persistedResult,
+          executionTimeMs,
+        });
+        writeEvent("status", { status: "done", executionTimeMs });
+        writeEvent("done", { ok: true });
+
+        clearInterval(heartbeat);
+        raw.end();
+        return;
+      } catch (error) {
+        const executionTimeMs = Date.now() - startTime;
+
+        // If the client disconnected, just end quietly
+        if (abortController.signal.aborted) {
+          clearInterval(heartbeat);
+          try {
+            raw.end();
+          } catch {}
+          return;
+        }
+
+        if (error instanceof TimeoutError) {
+          writeEvent("error", {
+            error: error.message,
+            code: "timeout",
+            executionTimeMs,
+          });
+          writeEvent("done", { ok: false });
+          clearInterval(heartbeat);
+          raw.end();
+          return;
+        }
+
+        if (error instanceof Error) {
+          req.log.error(
+            { err: error, agentId },
+            "Agent stream execution failed"
+          );
+          writeEvent("error", { error: error.message, executionTimeMs });
+          writeEvent("done", { ok: false });
+          clearInterval(heartbeat);
+          raw.end();
+          return;
+        }
+
+        clearInterval(heartbeat);
+        raw.end();
+        return;
       }
-    }, 15000);
+    }
+  );
 
-    const startTime = Date.now();
-
-    // Abort on client disconnect
-    const abortController = new AbortController();
-    raw.on("close", () => {
-      abortController.abort();
-      clearInterval(heartbeat);
-    });
-
-    // Initial status (align to UI: thinking/running/done)
-    writeEvent("status", { status: "thinking", agentId });
-
-    try {
-      const result = await runAgentWithTimeout(
-        (signal) => agent.run(validatedInput, { ...agentContext, emit: streamEmit, signal }),
-        timeout ?? 30000,
-        abortController
+  app.post<{
+    Body: ConfirmPendingActionRequest;
+  }>(
+    "/copilot/actions/confirm",
+    {
+      schema: {
+        body: ConfirmPendingActionRequestSchema,
+      },
+    },
+    async (req): Promise<ConfirmPendingActionResponse> => {
+      const { actionId } = req.body;
+      console.log({ actionId });
+      const record = actionLedger.claim(
+        actionId,
+        req.auth.userId,
+        req.auth.tenantId
       );
 
-      const executionTimeMs = Date.now() - startTime;
+      const tool = toolRegistry.get(record.toolId);
 
-      // Final result
-      writeEvent("result", { ok: true, agentId: agent.id, result, executionTimeMs });
-      writeEvent("status", { status: "done", executionTimeMs });
-      writeEvent("done", { ok: true });
-
-      clearInterval(heartbeat);
-      raw.end();
-      return;
-    } catch (error) {
-      const executionTimeMs = Date.now() - startTime;
-
-      // If the client disconnected, just end quietly
-      if (abortController.signal.aborted) {
-        clearInterval(heartbeat);
-        try { raw.end(); } catch {}
-        return;
+      if (!toolRequiresConfirmation(tool)) {
+        throw new ValidationError(
+          `Tool '${tool.id}' does not require confirmation`
+        );
       }
 
-      if (error instanceof TimeoutError) {
-        writeEvent("error", { error: error.message, code: "timeout", executionTimeMs });
-        writeEvent("done", { ok: false });
-        clearInterval(heartbeat);
-        raw.end();
-        return;
+      let parsedArgs;
+      console.log({ args: record.args });
+      try {
+        parsedArgs = tool.inputSchema.parse(record.args);
+      } catch (error) {
+        throw new ValidationError("Stored action arguments are invalid", error);
       }
 
-      if (error instanceof Error) {
-        req.log.error({ err: error, agentId }, "Agent stream execution failed");
-        writeEvent("error", { error: error.message, executionTimeMs });
-        writeEvent("done", { ok: false });
-        clearInterval(heartbeat);
-        raw.end();
-        return;
-      }
+      req.log.info(
+        {
+          actionId,
+          toolId: tool.id,
+          agentId: record.agentId,
+          userId: req.auth.userId,
+          tenantId: req.auth.tenantId,
+        },
+        "Confirming pending action"
+      );
 
-      clearInterval(heartbeat);
-      raw.end();
-      return;
+      const result = await tool.run(parsedArgs, {
+        userId: req.auth.userId,
+        tenantId: req.auth.tenantId,
+        roles: req.auth.roles,
+        traceId: record.traceId,
+        requestId: req.id,
+        agentId: record.agentId,
+        logger: req.log,
+      });
+
+      actionLedger.markExecuted(actionId, result);
+
+      return {
+        ok: true,
+        actionId,
+        status: "executed",
+        executedAt: new Date().toISOString(),
+        result,
+      };
     }
-  });
+  );
 
   /**
    * GET /copilot/agents
@@ -337,12 +500,12 @@ export const copilotAgentRoutes: FastifyPluginAsync = async (app) => {
    */
   app.get("/copilot/agents", async () => {
     const agents = agentRegistry.listMetadata();
-    
+
     const response: ListAgentsResponse = {
       ok: true,
       agents,
     };
-    
+
     return response;
   });
 
@@ -354,7 +517,7 @@ export const copilotAgentRoutes: FastifyPluginAsync = async (app) => {
     "/copilot/agents/:agentId",
     async (req) => {
       const agent = agentRegistry.get(req.params.agentId);
-      
+
       if (!agent) {
         throw new AgentNotFoundError(req.params.agentId);
       }
@@ -377,7 +540,7 @@ export const copilotAgentRoutes: FastifyPluginAsync = async (app) => {
    */
   app.get("/copilot/tools", async (req) => {
     const tools = toolRegistry.listMetadata();
-    
+
     return {
       ok: true,
       tools,
@@ -392,7 +555,7 @@ export const copilotAgentRoutes: FastifyPluginAsync = async (app) => {
     "/copilot/agents/:agentId/tools",
     async (req) => {
       const { agentId } = req.params;
-      
+
       // Verify agent exists
       const agent = agentRegistry.get(agentId);
       if (!agent) {

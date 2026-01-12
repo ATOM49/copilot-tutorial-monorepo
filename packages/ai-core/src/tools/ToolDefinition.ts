@@ -1,4 +1,4 @@
-import { z } from "zod/v3";
+import { z } from "zod";
 import type { AgentContext } from "../agents/AgentDefinition.js";
 
 /**
@@ -37,6 +37,17 @@ export interface ToolDefinition<
   /** Optional permissions guard (roles/tenant) evaluated before execution */
   permissions?: ToolPermissions;
 
+  /**
+   * Effect classification lets the platform enforce confirmation flows for write tools.
+   * Defaults to "read" when omitted.
+   */
+  effect?: "read" | "write";
+
+  /**
+   * Explicit opt-in for confirmation gating. Automatically true when effect === "write".
+   */
+  requiresConfirmation?: boolean;
+
   /** Zod schema describing the expected input structure */
   inputSchema: TInput;
 
@@ -52,3 +63,11 @@ export interface ToolDefinition<
 }
 
 export type { z };
+
+export function toolRequiresConfirmation(
+  def: ToolDefinition
+): boolean {
+  if (!def) return false;
+  if (def.requiresConfirmation === true) return true;
+  return def.effect === "write";
+}

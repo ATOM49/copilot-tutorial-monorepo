@@ -1,4 +1,4 @@
-import { z } from "zod/v3";
+import { z } from "zod";
 import type { ToolDefinition } from "../tools/ToolDefinition.js";
 import type { ToolRegistry } from "../tools/ToolRegistry.js";
 
